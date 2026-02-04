@@ -342,7 +342,15 @@ When story.json is complete, generation is finished.`;
   res.json({ generationId, status: 'started' });
 
   // Run Claude CLI in background
-  const claude = spawn('claude', ['-p', '--dangerously-skip-permissions', prompt], {
+  // Restrict to only the tools needed for code exploration and file writing
+  const allowedTools = 'Read,Grep,Glob,Write';
+  const claude = spawn('claude', [
+    '-p',
+    '--dangerously-skip-permissions',
+    '--allowedTools', allowedTools,
+    '--add-dir', generationDir,  // Allow writing to the generation temp directory
+    prompt
+  ], {
     cwd: CODEBASE_DIR,
     env: { ...process.env },
   });
