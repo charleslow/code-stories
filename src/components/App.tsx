@@ -11,6 +11,8 @@ export function App() {
   const [currentStory, setCurrentStory] = useState<Story | null>(null);
   const [generationId, setGenerationId] = useState<string | null>(null);
   const [generationStage, setGenerationStage] = useState(0);
+  const [generationLogs, setGenerationLogs] = useState<string[]>([]);
+  const [generationStatus, setGenerationStatus] = useState<'running' | 'completed' | 'failed' | 'unknown'>('unknown');
   const [currentQuery, setCurrentQuery] = useState('');
 
   // Load stories on mount
@@ -28,9 +30,11 @@ export function App() {
       try {
         const progress = await getGenerationProgress(generationId);
         setGenerationStage(progress.stage);
+        setGenerationLogs(progress.logs || []);
+        setGenerationStatus(progress.status || 'unknown');
 
         // Check if complete
-        if (progress.stage >= 5) {
+        if (progress.stage >= 5 || progress.status === 'completed') {
           clearInterval(pollInterval);
           // Wait a moment for the server to process the final story
           setTimeout(async () => {
@@ -58,6 +62,8 @@ export function App() {
   const handleGenerate = useCallback(async (query: string) => {
     setCurrentQuery(query);
     setGenerationStage(0);
+    setGenerationLogs([]);
+    setGenerationStatus('running');
     setView('generating');
 
     try {
@@ -95,7 +101,12 @@ export function App() {
         />
       )}
       {view === 'generating' && (
-        <GeneratingView currentStage={generationStage} query={currentQuery} />
+        <GeneratingView
+          currentStage={generationStage}
+          query={currentQuery}
+          logs={generationLogs}
+          status={generationStatus}
+        />
       )}
       {view === 'viewing' && currentStory && (
         <StoryViewer story={currentStory} onBack={handleBack} />

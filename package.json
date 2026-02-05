@@ -5,8 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "server": "node server/index.js",
+    "server": "node server/index.cjs",
+    "server:test": "CODE_JOURNEY_TEST_MODE=true node server/index.cjs",
     "start": "concurrently \"npm run server\" \"npm run dev\"",
+    "start:test": "concurrently \"npm run server:test\" \"npm run dev\"",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview"

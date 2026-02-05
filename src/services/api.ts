@@ -35,6 +35,8 @@ export async function startGeneration(query: string): Promise<{ generationId: st
 export interface ProgressResponse {
   stage: number;
   files: Record<string, { exists: boolean; hasCheckpoint: boolean }>;
+  logs: string[];
+  status: 'running' | 'completed' | 'failed' | 'unknown';
 }
 
 export async function getGenerationProgress(generationId: string): Promise<ProgressResponse> {

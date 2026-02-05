@@ -11,7 +11,10 @@ app.use(express.json());
 
 // Paths
 const CODE_JOURNEY_DIR = path.resolve(__dirname, '..');
-const CODEBASE_DIR = path.resolve(CODE_JOURNEY_DIR, '..');
+// TEST_MODE: analyze the code-journey repo itself (for development/testing)
+// PRODUCTION: analyze the parent directory (standard deployment model)
+const TEST_MODE = process.env.CODE_JOURNEY_TEST_MODE === 'true';
+const CODEBASE_DIR = TEST_MODE ? CODE_JOURNEY_DIR : path.resolve(CODE_JOURNEY_DIR, '..');
 const STORIES_DIR = path.join(CODE_JOURNEY_DIR, 'stories');
 const TMP_DIR = path.join(STORIES_DIR, '.tmp');
 
@@ -21,6 +24,29 @@ if (!fs.existsSync(STORIES_DIR)) {
 }
 if (!fs.existsSync(TMP_DIR)) {
   fs.mkdirSync(TMP_DIR, { recursive: true });
+}
+
+// In-memory log storage per generation
+const generationLogs = new Map(); // generationId -> { logs: string[], status: 'running' | 'completed' | 'failed' }
+
+function addLog(generationId, message) {
+  if (!generationLogs.has(generationId)) {
+    generationLogs.set(generationId, { logs: [], status: 'running' });
+  }
+  const entry = generationLogs.get(generationId);
+  const timestamp = new Date().toISOString().slice(11, 19);
+  entry.logs.push(`[${timestamp}] ${message}`);
+  // Keep only last 100 logs
+  if (entry.logs.length > 100) {
+    entry.logs.shift();
+  }
+  console.log(`[${generationId.slice(0, 8)}] ${message}`);
+}
+
+function setGenerationStatus(generationId, status) {
+  if (generationLogs.has(generationId)) {
+    generationLogs.get(generationId).status = status;
+  }
 }
 
 // Get current commit hash
@@ -94,7 +120,10 @@ app.get('/api/generate/:generationId/progress', (req, res) => {
   if (files['snippets_mapping.md']?.hasCheckpoint) stage = 4;
   if (files['story.json']?.exists) stage = 5;
 
-  res.json({ stage, files });
+  // Include logs and status
+  const logEntry = generationLogs.get(req.params.generationId) || { logs: [], status: 'unknown' };
+
+  res.json({ stage, files, logs: logEntry.logs, status: logEntry.status });
 });
 
 // Start story generation
@@ -338,44 +367,67 @@ Additional guidelines for explanations:
 
 When story.json is complete, generation is finished.`;
 
+  // Initialize logs for this generation
+  generationLogs.set(generationId, { logs: [], status: 'running' });
+  addLog(generationId, 'Generation started');
+  addLog(generationId, `Query: "${query}"`);
+  addLog(generationId, `Codebase: ${CODEBASE_DIR}`);
+
   // Return immediately with generation ID
   res.json({ generationId, status: 'started' });
 
   // Run Claude CLI in background
   // Restrict to only the tools needed for code exploration and file writing
   const allowedTools = 'Read,Grep,Glob,Write';
+  addLog(generationId, 'Spawning Claude CLI...');
   const claude = spawn('claude', [
     '-p',
     '--dangerously-skip-permissions',
     '--allowedTools', allowedTools,
     '--add-dir', generationDir,  // Allow writing to the generation temp directory
-    prompt
   ], {
     cwd: CODEBASE_DIR,
     env: { ...process.env },
   });
 
+  addLog(generationId, `Claude process started (PID: ${claude.pid})`);
+
+  // Send prompt via stdin
+  claude.stdin.write(prompt);
+  claude.stdin.end();
+  addLog(generationId, 'Prompt sent to Claude');
+
   let output = '';
   claude.stdout.on('data', (data) => {
     output += data.toString();
+    const preview = data.toString().slice(0, 100).replace(/\n/g, ' ');
+    addLog(generationId, `stdout: ${preview}${data.toString().length > 100 ? '...' : ''}`);
   });
 
   claude.stderr.on('data', (data) => {
-    console.error('Claude stderr:', data.toString());
+    addLog(generationId, `stderr: ${data.toString().slice(0, 200)}`);
+  });
+
+  claude.on('error', (error) => {
+    addLog(generationId, `Process error: ${error.message}`);
+    setGenerationStatus(generationId, 'failed');
   });
 
   claude.on('close', (code) => {
-    console.log(`Claude process exited with code ${code}`);
+    addLog(generationId, `Claude process exited with code ${code}`);
 
     // Check if story.json was created
     const storyPath = path.join(generationDir, 'story.json');
     if (fs.existsSync(storyPath)) {
+      addLog(generationId, 'story.json found, processing...');
       try {
         const story = JSON.parse(fs.readFileSync(storyPath, 'utf-8'));
+        addLog(generationId, `Story parsed: "${story.title}" with ${story.views?.length || 0} views`);
 
         // Copy to stories directory
         const finalPath = path.join(STORIES_DIR, `${story.id}.json`);
         fs.writeFileSync(finalPath, JSON.stringify(story, null, 2));
+        addLog(generationId, `Story saved to ${finalPath}`);
 
         // Update manifest
         const manifestPath = path.join(STORIES_DIR, 'manifest.json');
@@ -394,12 +446,15 @@ When story.json is complete, generation is finished.`;
         // Clean up tmp directory
         fs.rmSync(generationDir, { recursive: true, force: true });
 
-        console.log(`Story ${story.id} saved successfully`);
+        addLog(generationId, 'Generation completed successfully!');
+        setGenerationStatus(generationId, 'completed');
       } catch (error) {
-        console.error('Error processing story:', error);
+        addLog(generationId, `Error processing story: ${error.message}`);
+        setGenerationStatus(generationId, 'failed');
       }
     } else {
-      console.error('story.json not found after generation');
+      addLog(generationId, 'story.json not found after generation - check intermediate files in tmp directory');
+      setGenerationStatus(generationId, 'failed');
     }
   });
 });
@@ -407,6 +462,7 @@ When story.json is complete, generation is finished.`;
 const PORT = 3001;
 app.listen(PORT, () => {
   console.log(`Code Journey server running on port ${PORT}`);
+  console.log(`Mode: ${TEST_MODE ? 'TEST (analyzing code-journey itself)' : 'PRODUCTION (analyzing parent repo)'}`);
   console.log(`Codebase directory: ${CODEBASE_DIR}`);
   console.log(`Stories directory: ${STORIES_DIR}`);
 });
