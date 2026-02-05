@@ -347,14 +347,14 @@ body {
   flex-direction: column;
 }
 
-.view-display {
+.chapter-display {
   flex: 1;
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 
-.view-content {
+.chapter-content {
   flex: 1;
   display: flex;
   overflow: hidden;
@@ -490,7 +490,7 @@ body {
 }
 
 /* Navigation */
-.view-navigation {
+.chapter-navigation {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -520,7 +520,7 @@ body {
   cursor: not-allowed;
 }
 
-.view-counter {
+.chapter-counter {
   color: var(--text-muted);
   font-size: 0.9rem;
 }

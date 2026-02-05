@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { Story, StoryMetadata, AppView } from '../types';
+import type { Story, StoryMetadata, AppState } from '../types';
 import { getStories, getStory, startGeneration, getGenerationProgress } from '../services/api';
 import { QueryInput } from './QueryInput';
 import { GeneratingView } from './GeneratingView';
 import { StoryViewer } from './StoryViewer';
 
 export function App() {
-  const [view, setView] = useState<AppView>('home');
+  const [appState, setAppState] = useState<AppState>('home');
   const [stories, setStories] = useState<StoryMetadata[]>([]);
   const [currentStory, setCurrentStory] = useState<Story | null>(null);
   const [generationId, setGenerationId] = useState<string | null>(null);
@@ -24,7 +24,7 @@ export function App() {
 
   // Poll for generation progress
   useEffect(() => {
-    if (!generationId || view !== 'generating') return;
+    if (!generationId || appState !== 'generating') return;
 
     const pollInterval = setInterval(async () => {
       try {
@@ -41,13 +41,13 @@ export function App() {
             try {
               const story = await getStory(generationId);
               setCurrentStory(story);
-              setView('viewing');
+              setAppState('reading');
               // Refresh stories list
               const manifest = await getStories();
               setStories(manifest.stories);
             } catch (error) {
               console.error('Error loading generated story:', error);
-              setView('home');
+              setAppState('home');
             }
           }, 1000);
         }
@@ -57,21 +57,21 @@ export function App() {
     }, 2000);
 
     return () => clearInterval(pollInterval);
-  }, [generationId, view]);
+  }, [generationId, appState]);
 
   const handleGenerate = useCallback(async (query: string) => {
     setCurrentQuery(query);
     setGenerationStage(0);
     setGenerationLogs([]);
     setGenerationStatus('running');
-    setView('generating');
+    setAppState('generating');
 
     try {
       const result = await startGeneration(query);
       setGenerationId(result.generationId);
     } catch (error) {
       console.error('Error starting generation:', error);
-      setView('home');
+      setAppState('home');
     }
   }, []);
 
@@ -79,7 +79,7 @@ export function App() {
     try {
       const story = await getStory(id);
       setCurrentStory(story);
-      setView('viewing');
+      setAppState('reading');
     } catch (error) {
       console.error('Error loading story:', error);
     }
@@ -88,19 +88,19 @@ export function App() {
   const handleBack = useCallback(() => {
     setCurrentStory(null);
     setGenerationId(null);
-    setView('home');
+    setAppState('home');
   }, []);
 
   return (
     <div className="app">
-      {view === 'home' && (
+      {appState === 'home' && (
         <QueryInput
           stories={stories}
           onGenerate={handleGenerate}
           onSelectStory={handleSelectStory}
         />
       )}
-      {view === 'generating' && (
+      {appState === 'generating' && (
         <GeneratingView
           currentStage={generationStage}
           query={currentQuery}
@@ -108,7 +108,7 @@ export function App() {
           status={generationStatus}
         />
       )}
-      {view === 'viewing' && currentStory && (
+      {appState === 'reading' && currentStory && (
         <StoryViewer story={currentStory} onBack={handleBack} />
       )}
     </div>

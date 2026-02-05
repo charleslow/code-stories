@@ -1,4 +1,4 @@
-// Core data types for Code Journey
+// Core data types for Code Stories
 
 export interface Story {
   id: string;
@@ -6,10 +6,10 @@ export interface Story {
   query: string;
   commitHash: string;
   createdAt: string;
-  views: View[];
+  chapters: Chapter[];
 }
 
-export interface View {
+export interface Chapter {
   id: string;
   label: string;
   snippets: CodeSnippet[];
@@ -70,4 +70,4 @@ export const STAGES: StageConfig[] = [
 ];
 
 // App state
-export type AppView = 'home' | 'generating' | 'viewing';
+export type AppState = 'home' | 'generating' | 'reading';

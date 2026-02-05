@@ -1,27 +1,27 @@
-import type { View } from '../types';
+import type { Chapter } from '../types';
 
 interface SidebarProps {
-  views: View[];
-  currentViewIndex: number;
-  onViewSelect: (index: number) => void;
+  chapters: Chapter[];
+  currentChapterIndex: number;
+  onChapterSelect: (index: number) => void;
 }
 
-export function Sidebar({ views, currentViewIndex, onViewSelect }: SidebarProps) {
+export function Sidebar({ chapters, currentChapterIndex, onChapterSelect }: SidebarProps) {
   return (
     <aside className="sidebar">
-      <h2>Outline</h2>
+      <h2>Chapters</h2>
       <nav>
         <ul>
-          {views.map((view, index) => (
-            <li key={view.id}>
+          {chapters.map((chapter, index) => (
+            <li key={chapter.id}>
               <button
-                className={`sidebar-item ${index === currentViewIndex ? 'active' : ''}`}
-                onClick={() => onViewSelect(index)}
+                className={`sidebar-item ${index === currentChapterIndex ? 'active' : ''}`}
+                onClick={() => onChapterSelect(index)}
               >
                 <span className="indicator">
-                  {index < currentViewIndex ? '✓' : index === currentViewIndex ? '●' : '○'}
+                  {index < currentChapterIndex ? '✓' : index === currentChapterIndex ? '●' : '○'}
                 </span>
-                <span className="label">{view.label}</span>
+                <span className="label">{chapter.label}</span>
               </button>
             </li>
           ))}

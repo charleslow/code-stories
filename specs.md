@@ -1,13 +1,13 @@
-# Code Journey - Product Specifications
+# Code Stories - Product Specifications
 
 ## 1. Overview
 
-**Code Journey** is a narrative-driven code exploration tool that transforms the question "How does this code work?" into a guided, sequential story. Users provide a natural language query about a codebase, and an AI generates a curated sequence of code views with explanations, enabling comprehensive understanding without context-switching overload.
+**Code Stories** is a narrative-driven code exploration tool that transforms the question "How does this code work?" into a guided, sequential story. Users provide a natural language query about a codebase, and an AI generates a curated sequence of code chapters with explanations, enabling comprehensive understanding without context-switching overload.
 
 ### Value Proposition
 
 - **Narrative Structure**: Code understanding presented as a coherent story, not scattered file browsing
-- **Focused Views**: Each view shows only what's needed (≤1-2 screens), reducing cognitive load
+- **Focused Chapters**: Each chapter shows only what's needed (≤1-2 screens), reducing cognitive load
 - **Side-by-Side Explanations**: Markdown explanations accompany each code snippet
 - **Commit-Anchored**: Stories are tied to specific commits, ensuring reproducibility
 
@@ -18,11 +18,11 @@
 ### Story
 A complete narrative explaining a code flow or concept. Contains:
 - A **title** (derived from or summarizing the user's query)
-- A **summary view** providing high-level overview
-- An ordered sequence of **views**
+- A **summary chapter** providing high-level overview
+- An ordered sequence of **chapters**
 - Metadata: commit hash, creation timestamp, source folder path
 
-### View
+### Chapter
 An atomic unit of the story. Contains:
 - One or more **code snippets** (from potentially different files)
 - A **markdown explanation** displayed alongside the code
@@ -30,7 +30,7 @@ An atomic unit of the story. Contains:
 - Total content should fit within 1-2 screen heights
 
 ### Code Snippet
-A portion of source code within a view. Contains:
+A portion of source code within a chapter. Contains:
 - File path (relative to codebase root)
 - Start and end line numbers
 - The actual code content (captured at generation time)
@@ -39,11 +39,11 @@ A portion of source code within a view. Contains:
 
 ## 3. Deployment Model
 
-Code Journey is designed to be **cloned into the target repository** it will analyze:
+Code Stories is designed to be **cloned into the target repository** it will analyze:
 
 ```
 target-repo/
-├── code-journey/           # Clone code-journey here
+├── code-stories/           # Clone code-stories here
 │   ├── src/
 │   ├── stories/            # Generated stories stored here
 │   ├── package.json
@@ -65,14 +65,14 @@ This approach:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  1. User clones code-journey into their target repo             │
-│  2. User launches the app from within code-journey/             │
+│  1. User clones code-stories into their target repo             │
+│  2. User launches the app from within code-stories/             │
 │  3. User enters query: "How does X work?" or "Trace Y flow"     │
 │  4. App invokes Claude CLI to generate story (batch, not stream)│
 │  5. User waits while story generates (loading state)            │
-│  6. Story appears: summary view first                           │
+│  6. Story appears: summary chapter first                        │
 │  7. User navigates via Next/Prev buttons or sidebar             │
-│  8. Story is auto-saved to code-journey/stories/                │
+│  8. Story is auto-saved to code-stories/stories/                │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -81,8 +81,8 @@ This approach:
 1. **Setup** (one-time):
    ```bash
    cd /path/to/target-repo
-   git clone <code-journey-repo-url> code-journey
-   cd code-journey
+   git clone <code-stories-repo-url> code-stories
+   cd code-stories
    npm install
    ```
 2. **Launch**: User runs `npm start` to start local React app
@@ -93,12 +93,12 @@ This approach:
    - App invokes Claude CLI with the query and codebase context
    - Loading indicator shown during generation
    - Generation completes fully before displaying (no streaming preview)
-5. **View**:
-   - Summary view displayed first
+5. **Read**:
+   - Summary chapter displayed first
    - User navigates with Next/Prev buttons
-   - Sidebar shows outline with all view labels; current view highlighted
+   - Sidebar shows outline with all chapter labels; current chapter highlighted
    - User can click any sidebar item to jump directly
-6. **Persist**: Story auto-saved to `code-journey/stories/{story-id}.json`
+6. **Persist**: Story auto-saved to `code-stories/stories/{story-id}.json`
 
 ---
 
@@ -119,13 +119,13 @@ This approach:
 
 ```
 target-repo/
-├── code-journey/                # This tool (cloned into target repo)
+├── code-stories/                # This tool (cloned into target repo)
 │   ├── src/
 │   │   ├── components/
 │   │   │   ├── App.tsx
 │   │   │   ├── QueryInput.tsx
 │   │   │   ├── StoryViewer.tsx
-│   │   │   ├── ViewDisplay.tsx
+│   │   │   ├── ChapterDisplay.tsx
 │   │   │   ├── CodePanel.tsx
 │   │   │   ├── ExplanationPanel.tsx
 │   │   │   └── Sidebar.tsx
@@ -155,14 +155,14 @@ The app invokes Claude CLI as a subprocess with:
 - Access to the parent directory (the target codebase)
 
 ```bash
-# Run from within code-journey/ directory
+# Run from within code-stories/ directory
 cd .. && claude --print "Generate a code story: {user_query}"
 ```
 
 The prompt to Claude CLI will include:
 1. The story JSON schema (see Section 6)
-2. Instructions on view sizing (1-2 screens max)
-3. Instructions to start with a summary view
+2. Instructions on chapter sizing (1-2 screens max)
+3. Instructions to start with a summary chapter
 4. The user's query
 
 Claude CLI will have full access to explore and read files in the codebase.
@@ -181,10 +181,10 @@ interface Story {
   codebasePath: string;        // Absolute path to codebase
   commitHash: string;          // Git commit SHA at generation time
   createdAt: string;           // ISO 8601 timestamp
-  views: View[];               // Ordered array of views
+  chapters: Chapter[];         // Ordered array of chapters
 }
 
-interface View {
+interface Chapter {
   id: string;                  // UUID or sequential ID
   label: string;               // Short title for sidebar (e.g., "Entry Point")
   snippets: CodeSnippet[];     // One or more code snippets
@@ -209,15 +209,15 @@ interface CodeSnippet {
   "codebasePath": "/home/user/projects/myapp",
   "commitHash": "abc123def456",
   "createdAt": "2025-01-15T10:30:00Z",
-  "views": [
+  "chapters": [
     {
-      "id": "view-0",
+      "id": "chapter-0",
       "label": "Overview",
       "snippets": [],
       "explanation": "# Request Handling Flow\n\nThis story traces how a user HTTP request travels through the application...\n\n## Key Components\n- **API Layer**: FastAPI routes in `api/`\n- **Service Layer**: Business logic in `services/`\n- **Data Layer**: SQLAlchemy models in `models/`"
     },
     {
-      "id": "view-1",
+      "id": "chapter-1",
       "label": "API Entry Point",
       "snippets": [
         {
@@ -235,9 +235,9 @@ interface CodeSnippet {
 
 ### Storage Location
 
-Stories are saved within the code-journey folder: `code-journey/stories/{story-id}.json`
+Stories are saved within the code-stories folder: `code-stories/stories/{story-id}.json`
 
-A manifest file `code-journey/stories/manifest.json` tracks all stories for quick listing:
+A manifest file `code-stories/stories/manifest.json` tracks all stories for quick listing:
 
 ```json
 {
@@ -262,7 +262,7 @@ Note: The `codebasePath` in the Story JSON is always `../` (parent directory) an
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│  Header: "Code Journey" logo/title                                   │
+│  Header: "Code Stories" logo/title                                   │
 ├────────────┬─────────────────────────────────────────────────────────┤
 │            │                                                         │
 │  Sidebar   │   Main Content Area                                     │
@@ -272,7 +272,7 @@ Note: The `codebasePath` in the Story JSON is always `../` (parent directory) an
 │  ○ Service │   │  ┌───────────────┐  │                         │     │
 │  ○ Database│   │  │ Snippet 1     │  │  Markdown rendered      │     │
 │  ○ Response│   │  │ file: foo.py  │  │  explanation for        │     │
-│            │   │  │ lines 10-25   │  │  this view              │     │
+│            │   │  │ lines 10-25   │  │  this chapter           │     │
 │            │   │  └───────────────┘  │                         │     │
 │            │   │  ┌───────────────┐  │                         │     │
 │            │   │  │ Snippet 2     │  │                         │     │
@@ -289,23 +289,23 @@ Note: The `codebasePath` in the Story JSON is always `../` (parent directory) an
 
 **Key Layout Points:**
 - Code panel on the **left**, explanation panel on the **right**
-- Multiple snippets within a view are **stacked vertically** in the code panel
+- Multiple snippets within a chapter are **stacked vertically** in the code panel
 - Each snippet shows its file path and line range as a header
 
 ### Component Specifications
 
 #### Sidebar
 - Width: ~200px, fixed
-- Lists all view labels vertically
-- Current view highlighted (filled circle or background color)
-- Clicking a label jumps to that view
-- Scrollable if many views
+- Lists all chapter labels vertically
+- Current chapter highlighted (filled circle or background color)
+- Clicking a label jumps to that chapter
+- Scrollable if many chapters
 
 #### Code Panel
 - Width: ~50-60% of main content area
 - Syntax highlighting for Python
 - Shows file path and line numbers above each snippet
-- If multiple snippets in one view, stack vertically with clear separators
+- If multiple snippets in one chapter, stack vertically with clear separators
 - Vertical scroll if content exceeds viewport
 
 #### Explanation Panel
@@ -315,7 +315,7 @@ Note: The `codebasePath` in the Story JSON is always `../` (parent directory) an
 
 #### Navigation Buttons
 - "← Prev" and "Next →" buttons at bottom of main content
-- Prev disabled on first view, Next disabled on last view
+- Prev disabled on first chapter, Next disabled on last chapter
 - Keyboard shortcuts: Left/Right arrows or J/K
 
 #### Query Input Screen
@@ -373,7 +373,7 @@ The AI generation process is the core value proposition. Rather than a single-sh
 │  - Output: exploration_notes.md                                         │
 ├─────────────────────────────────────────────────────────────────────────┤
 │  Stage 2: OUTLINE                                                       │
-│  - Create narrative structure (sequence of views)                       │
+│  - Create narrative structure (sequence of chapters)                    │
 │  - Define the "story arc" - beginning, middle, end                      │
 │  - Output: narrative_outline.md                                         │
 ├─────────────────────────────────────────────────────────────────────────┤
@@ -384,14 +384,14 @@ The AI generation process is the core value proposition. Rather than a single-sh
 │  - Output: narrative_outline.md (revised)                               │
 ├─────────────────────────────────────────────────────────────────────────┤
 │  Stage 4: IDENTIFY SNIPPETS                                             │
-│  - For each view, identify exact code snippets                          │
+│  - For each chapter, identify exact code snippets                       │
 │  - Determine file paths, line ranges                                    │
 │  - Ensure snippets fit within size constraints                          │
 │  - Output: snippets_mapping.md                                          │
 ├─────────────────────────────────────────────────────────────────────────┤
 │  Stage 5: CRAFT EXPLANATIONS                                            │
-│  - Write explanation for each view                                      │
-│  - Context-aware: knows preceding and following views                   │
+│  - Write explanation for each chapter                                   │
+│  - Context-aware: knows preceding and following chapters                │
 │  - References the actual code snippets                                  │
 │  - Output: final story JSON                                             │
 └─────────────────────────────────────────────────────────────────────────┘
@@ -399,7 +399,7 @@ The AI generation process is the core value proposition. Rather than a single-sh
 
 ### Working Directory
 
-During generation, intermediate files are stored in: `code-journey/stories/.tmp/{generation-id}/`
+During generation, intermediate files are stored in: `code-stories/stories/.tmp/{generation-id}/`
 
 ```
 .tmp/
@@ -516,9 +516,9 @@ The following describes what each stage accomplishes. The actual prompt sent to 
 | Stage | Goal | Output File | Checkpoint |
 |-------|------|-------------|------------|
 | 1. Explore | Understand codebase structure relevant to query | `exploration_notes.md` | `STAGE_1_COMPLETE` |
-| 2. Outline | Create narrative structure (sequence of views) | `narrative_outline.md` | `STAGE_2_COMPLETE` |
+| 2. Outline | Create narrative structure (sequence of chapters) | `narrative_outline.md` | `STAGE_2_COMPLETE` |
 | 3. Review | Analyze flow, fix gaps/redundancy, refine | `narrative_outline.md` (updated) | `STAGE_3_COMPLETE` |
-| 4. Snippets | Map each view to exact file:line ranges | `snippets_mapping.md` | `STAGE_4_COMPLETE` |
+| 4. Snippets | Map each chapter to exact file:line ranges | `snippets_mapping.md` | `STAGE_4_COMPLETE` |
 | 5. Explain | Write context-aware explanations, output JSON | `story.json` | (file existence) |
 
 ---
@@ -532,13 +532,13 @@ interface Story {
   query: string;               // Original user query
   commitHash: string;          // Git commit SHA
   createdAt: string;           // ISO 8601 timestamp
-  views: View[];
+  chapters: Chapter[];
 }
 
-interface View {
-  id: string;                  // "view-0", "view-1", etc.
+interface Chapter {
+  id: string;                  // "chapter-0", "chapter-1", etc.
   label: string;               // Short title for sidebar
-  snippets: CodeSnippet[];     // Empty array for overview view
+  snippets: CodeSnippet[];     // Empty array for overview chapter
   explanation: string;         // Markdown explanation
 }
 
@@ -571,7 +571,7 @@ This is the single prompt sent to Claude CLI. It contains all stage instructions
 You are creating a "code story" - a narrative-driven walkthrough that answers:
 "{user_query}"
 
-A code story is a sequence of "views". Each view shows a code snippet alongside
+A code story is a sequence of "chapters". Each chapter shows a code snippet alongside
 a markdown explanation. The story should flow like a guided tour through the
 codebase, not a dry reference manual.
 
@@ -633,23 +633,23 @@ Structure as:
 ## Overview
 (2-3 sentences summarizing what this story will cover and why it matters)
 
-## View Sequence
+## Chapter Sequence
 
-### View 1: [Short Label]
-- **Purpose**: Why this view exists in the narrative
+### Chapter 1: [Short Label]
+- **Purpose**: Why this chapter exists in the narrative
 - **What to show**: Which file(s) and roughly which code
-- **Key points**: What the reader should learn from this view
-- **Transition**: How this connects to the next view
+- **Key points**: What the reader should learn from this chapter
+- **Transition**: How this connects to the next chapter
 
-### View 2: [Short Label]
-...continue for all views...
+### Chapter 2: [Short Label]
+...continue for all chapters...
 
 Guidelines:
-- Start with context/overview (first view may have no code, just explanation)
-- Each view should have ONE main teaching point
-- Views should build on each other logically
+- Start with context/overview (first chapter may have no code, just explanation)
+- Each chapter should have ONE main teaching point
+- Chapters should build on each other logically
 - End with resolution/summary if appropriate
-- Aim for 5-15 views depending on complexity
+- Aim for 5-15 chapters depending on complexity
 - Labels should be 2-4 words (e.g., "Entry Point", "Parse Request", "Database Query")
 
 End the file with exactly this line:
@@ -663,9 +663,9 @@ Read {tmp_dir}/narrative_outline.md and verify it contains STAGE_2_COMPLETE.
 Critically review the outline for quality and flow.
 
 Evaluate:
-1. **Logical Flow**: Does each view naturally lead to the next?
+1. **Logical Flow**: Does each chapter naturally lead to the next?
 2. **Completeness**: Are there gaps where the reader would be confused?
-3. **Redundancy**: Are any views repetitive or unnecessary?
+3. **Redundancy**: Are any chapters repetitive or unnecessary?
 4. **Pacing**: Is the story well-paced? Not too fast or too slow?
 5. **Clarity**: Will a reader unfamiliar with the codebase follow along?
 6. **Cohesion**: Does the story feel unified, not fragmented?
@@ -686,13 +686,13 @@ STAGE 4: IDENTIFY SNIPPETS
 ==========================================================================
 Read {tmp_dir}/narrative_outline.md and verify it contains STAGE_3_COMPLETE.
 
-For each view in the outline, identify the exact code snippets to display.
+For each chapter in the outline, identify the exact code snippets to display.
 
 Write to: {tmp_dir}/snippets_mapping.md
 
-For each view:
+For each chapter:
 
-### View N: [Label]
+### Chapter N: [Label]
 
 **Snippet 1:**
 - File: path/to/file.py (relative to codebase root)
@@ -705,12 +705,12 @@ For each view:
 - Reason: Why showing this alongside snippet 1
 
 Constraints:
-- Each view's total code should be ~40-80 lines max (fits 1-2 screens)
+- Each chapter's total code should be ~40-80 lines max (fits 1-2 screens)
 - Prefer showing complete logical units (whole functions when possible)
 - If a function is too long, show the most relevant portion
 - Snippets should be self-contained enough to understand
 - Include imports/context only if essential for understanding
-- The overview view (View 1) typically has no snippets
+- The overview chapter (Chapter 1) typically has no snippets
 
 End the file with exactly this line:
 <!-- CHECKPOINT: STAGE_4_COMPLETE -->
@@ -722,10 +722,10 @@ Read {tmp_dir}/snippets_mapping.md and verify it contains STAGE_4_COMPLETE.
 
 Now create the final story JSON with context-aware explanations.
 
-Read the code for each snippet identified in Stage 4. For each view, write an
+Read the code for each snippet identified in Stage 4. For each chapter, write an
 explanation that:
 
-1. **Connects to previous**: Reference what we just saw (except for first view)
+1. **Connects to previous**: Reference what we just saw (except for first chapter)
    Example: "Building on the router we just saw..."
 
 2. **Explains the code**: What this code does and WHY it matters
@@ -734,7 +734,7 @@ explanation that:
 3. **Highlights key details**: Point out important lines, patterns, or decisions
    Example: "Notice how line 23 handles the edge case where..."
 
-4. **Bridges to next**: Subtle setup for what's coming (except for last view)
+4. **Bridges to next**: Subtle setup for what's coming (except for last chapter)
    Example: "The result is then passed to the service layer, which we'll see next."
 
 The explanation should feel like a knowledgeable colleague walking you through
@@ -750,7 +750,7 @@ Additional guidelines for explanations:
 - Use markdown formatting (headers, **bold**, `code references`)
 - Reference specific function/variable names from the snippets
 - Keep explanations concise but insightful (3-8 sentences typical)
-- The overview view (first) has empty snippets array, just explanation
+- The overview chapter (first) has empty snippets array, just explanation
 - Use phrases like "Notice how...", "This is where...", "Building on..."
 - Don't just describe what the code does - explain WHY it's designed this way
 
@@ -811,7 +811,7 @@ When tmp directory is preserved, user can:
 - Export (PDF, HTML)
 - User editing of explanations
 - Drill-down / sub-stories
-- Single-view regeneration
+- Single-chapter regeneration
 - Real-time code sync
 - Search within stories
 - Deployment (cloud hosting)
@@ -830,7 +830,7 @@ These are not planned for v1 but noted for potential future versions:
 - **Export**: PDF or static HTML for offline viewing
 - **Interactive elements**: Click on function names to drill down
 - **Story templates**: Pre-built patterns like "API flow", "Error handling"
-- **VS Code extension**: View stories within the editor
+- **VS Code extension**: Read stories within the editor
 - **Story versioning**: Track how stories evolve with code
 
 ---
@@ -839,8 +839,8 @@ These are not planned for v1 but noted for potential future versions:
 
 | Term | Definition |
 |------|------------|
-| Story | A complete narrative explaining a code flow, containing multiple views |
-| View | An atomic unit: code snippet(s) + markdown explanation |
+| Story | A complete narrative explaining a code flow, containing multiple chapters |
+| Chapter | An atomic unit: code snippet(s) + markdown explanation |
 | Snippet | A portion of a source file (file path + line range + content) |
 | Commit-anchored | Story is tied to a specific git commit hash |
 | Claude CLI | Command-line interface for Claude AI, used for generation |
@@ -851,8 +851,8 @@ These are not planned for v1 but noted for potential future versions:
 
 | Key | Action |
 |-----|--------|
-| → or L | Next view |
-| ← or H | Previous view |
-| Home | First view |
-| End | Last view |
-| 1-9 | Jump to view 1-9 (if exists) |
+| → or L | Next chapter |
+| ← or H | Previous chapter |
+| Home | First chapter |
+| End | Last chapter |
+| 1-9 | Jump to chapter 1-9 (if exists) |

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Story } from '../types';
 import { Sidebar } from './Sidebar';
-import { ViewDisplay } from './ViewDisplay';
+import { ChapterDisplay } from './ChapterDisplay';
 
 interface StoryViewerProps {
   story: Story;
@@ -9,15 +9,15 @@ interface StoryViewerProps {
 }
 
 export function StoryViewer({ story, onBack }: StoryViewerProps) {
-  const [currentViewIndex, setCurrentViewIndex] = useState(0);
+  const [currentChapterIndex, setCurrentChapterIndex] = useState(0);
 
   const goToPrev = useCallback(() => {
-    setCurrentViewIndex((prev) => Math.max(0, prev - 1));
+    setCurrentChapterIndex((prev) => Math.max(0, prev - 1));
   }, []);
 
   const goToNext = useCallback(() => {
-    setCurrentViewIndex((prev) => Math.min(story.views.length - 1, prev + 1));
-  }, [story.views.length]);
+    setCurrentChapterIndex((prev) => Math.min(story.chapters.length - 1, prev + 1));
+  }, [story.chapters.length]);
 
   // Keyboard navigation
   useEffect(() => {
@@ -27,22 +27,22 @@ export function StoryViewer({ story, onBack }: StoryViewerProps) {
       } else if (e.key === 'ArrowRight' || e.key === 'l' || e.key === 'L') {
         goToNext();
       } else if (e.key === 'Home') {
-        setCurrentViewIndex(0);
+        setCurrentChapterIndex(0);
       } else if (e.key === 'End') {
-        setCurrentViewIndex(story.views.length - 1);
+        setCurrentChapterIndex(story.chapters.length - 1);
       } else if (e.key >= '1' && e.key <= '9') {
         const index = parseInt(e.key) - 1;
-        if (index < story.views.length) {
-          setCurrentViewIndex(index);
+        if (index < story.chapters.length) {
+          setCurrentChapterIndex(index);
         }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [goToPrev, goToNext, story.views.length]);
+  }, [goToPrev, goToNext, story.chapters.length]);
 
-  const currentView = story.views[currentViewIndex];
+  const currentChapter = story.chapters[currentChapterIndex];
 
   return (
     <div className="story-viewer">
@@ -57,15 +57,15 @@ export function StoryViewer({ story, onBack }: StoryViewerProps) {
       </header>
       <div className="story-body">
         <Sidebar
-          views={story.views}
-          currentViewIndex={currentViewIndex}
-          onViewSelect={setCurrentViewIndex}
+          chapters={story.chapters}
+          currentChapterIndex={currentChapterIndex}
+          onChapterSelect={setCurrentChapterIndex}
         />
         <main className="story-main">
-          <ViewDisplay
-            view={currentView}
-            currentIndex={currentViewIndex}
-            totalViews={story.views.length}
+          <ChapterDisplay
+            chapter={currentChapter}
+            currentIndex={currentChapterIndex}
+            totalChapters={story.chapters.length}
             onPrev={goToPrev}
             onNext={goToNext}
           />

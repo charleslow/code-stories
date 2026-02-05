@@ -9,7 +9,7 @@ export function CodePanel({ snippets }: CodePanelProps) {
   if (snippets.length === 0) {
     return (
       <div className="code-panel empty">
-        <p className="no-code">This view contains no code snippets.</p>
+        <p className="no-code">This chapter contains no code snippets.</p>
       </div>
     );
   }

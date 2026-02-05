@@ -10,12 +10,12 @@ app.use(cors());
 app.use(express.json());
 
 // Paths
-const CODE_JOURNEY_DIR = path.resolve(__dirname, '..');
-// TEST_MODE: analyze the code-journey repo itself (for development/testing)
+const CODE_STORIES_DIR = path.resolve(__dirname, '..');
+// TEST_MODE: analyze the code-stories repo itself (for development/testing)
 // PRODUCTION: analyze the parent directory (standard deployment model)
-const TEST_MODE = process.env.CODE_JOURNEY_TEST_MODE === 'true';
-const CODEBASE_DIR = TEST_MODE ? CODE_JOURNEY_DIR : path.resolve(CODE_JOURNEY_DIR, '..');
-const STORIES_DIR = path.join(CODE_JOURNEY_DIR, 'stories');
+const TEST_MODE = process.env.CODE_STORIES_TEST_MODE === 'true';
+const CODEBASE_DIR = TEST_MODE ? CODE_STORIES_DIR : path.resolve(CODE_STORIES_DIR, '..');
+const STORIES_DIR = path.join(CODE_STORIES_DIR, 'stories');
 const TMP_DIR = path.join(STORIES_DIR, '.tmp');
 
 // Ensure directories exist
@@ -157,9 +157,9 @@ app.post('/api/generate', async (req, res) => {
   "query": "string",
   "commitHash": "string",
   "createdAt": "string (ISO 8601)",
-  "views": [
+  "chapters": [
     {
-      "id": "string (e.g., view-0)",
+      "id": "string (e.g., chapter-0)",
       "label": "string (2-4 words for sidebar)",
       "snippets": [
         {
@@ -177,7 +177,7 @@ app.post('/api/generate', async (req, res) => {
   const prompt = `You are creating a "code story" - a narrative-driven walkthrough that answers:
 "${query}"
 
-A code story is a sequence of "views". Each view shows a code snippet alongside
+A code story is a sequence of "chapters". Each chapter shows a code snippet alongside
 a markdown explanation. The story should flow like a guided tour through the
 codebase, not a dry reference manual.
 
@@ -239,23 +239,23 @@ Structure as:
 ## Overview
 (2-3 sentences summarizing what this story will cover and why it matters)
 
-## View Sequence
+## Chapter Sequence
 
-### View 1: [Short Label]
-- **Purpose**: Why this view exists in the narrative
+### Chapter 1: [Short Label]
+- **Purpose**: Why this chapter exists in the narrative
 - **What to show**: Which file(s) and roughly which code
-- **Key points**: What the reader should learn from this view
-- **Transition**: How this connects to the next view
+- **Key points**: What the reader should learn from this chapter
+- **Transition**: How this connects to the next chapter
 
-### View 2: [Short Label]
-...continue for all views...
+### Chapter 2: [Short Label]
+...continue for all chapters...
 
 Guidelines:
-- Start with context/overview (first view may have no code, just explanation)
-- Each view should have ONE main teaching point
-- Views should build on each other logically
+- Start with context/overview (first chapter may have no code, just explanation)
+- Each chapter should have ONE main teaching point
+- Chapters should build on each other logically
 - End with resolution/summary if appropriate
-- Aim for 5-15 views depending on complexity
+- Aim for 5-15 chapters depending on complexity
 - Labels should be 2-4 words (e.g., "Entry Point", "Parse Request", "Database Query")
 
 End the file with exactly this line:
@@ -269,9 +269,9 @@ Read ${generationDir}/narrative_outline.md and verify it contains STAGE_2_COMPLE
 Critically review the outline for quality and flow.
 
 Evaluate:
-1. **Logical Flow**: Does each view naturally lead to the next?
+1. **Logical Flow**: Does each chapter naturally lead to the next?
 2. **Completeness**: Are there gaps where the reader would be confused?
-3. **Redundancy**: Are any views repetitive or unnecessary?
+3. **Redundancy**: Are any chapters repetitive or unnecessary?
 4. **Pacing**: Is the story well-paced? Not too fast or too slow?
 5. **Clarity**: Will a reader unfamiliar with the codebase follow along?
 6. **Cohesion**: Does the story feel unified, not fragmented?
@@ -292,13 +292,13 @@ STAGE 4: IDENTIFY SNIPPETS
 ==========================================================================
 Read ${generationDir}/narrative_outline.md and verify it contains STAGE_3_COMPLETE.
 
-For each view in the outline, identify the exact code snippets to display.
+For each chapter in the outline, identify the exact code snippets to display.
 
 Write to: ${generationDir}/snippets_mapping.md
 
-For each view:
+For each chapter:
 
-### View N: [Label]
+### Chapter N: [Label]
 
 **Snippet 1:**
 - File: path/to/file.py (relative to codebase root)
@@ -311,12 +311,12 @@ For each view:
 - Reason: Why showing this alongside snippet 1
 
 Constraints:
-- Each view's total code should be ~40-80 lines max (fits 1-2 screens)
+- Each chapter's total code should be ~40-80 lines max (fits 1-2 screens)
 - Prefer showing complete logical units (whole functions when possible)
 - If a function is too long, show the most relevant portion
 - Snippets should be self-contained enough to understand
 - Include imports/context only if essential for understanding
-- The overview view (View 1) typically has no snippets
+- The overview chapter (Chapter 1) typically has no snippets
 
 End the file with exactly this line:
 <!-- CHECKPOINT: STAGE_4_COMPLETE -->
@@ -328,10 +328,10 @@ Read ${generationDir}/snippets_mapping.md and verify it contains STAGE_4_COMPLET
 
 Now create the final story JSON with context-aware explanations.
 
-Read the code for each snippet identified in Stage 4. For each view, write an
+Read the code for each snippet identified in Stage 4. For each chapter, write an
 explanation that:
 
-1. **Connects to previous**: Reference what we just saw (except for first view)
+1. **Connects to previous**: Reference what we just saw (except for first chapter)
    Example: "Building on the router we just saw..."
 
 2. **Explains the code**: What this code does and WHY it matters
@@ -340,7 +340,7 @@ explanation that:
 3. **Highlights key details**: Point out important lines, patterns, or decisions
    Example: "Notice how line 23 handles the edge case where..."
 
-4. **Bridges to next**: Subtle setup for what's coming (except for last view)
+4. **Bridges to next**: Subtle setup for what's coming (except for last chapter)
    Example: "The result is then passed to the service layer, which we'll see next."
 
 The explanation should feel like a knowledgeable colleague walking you through
@@ -361,7 +361,7 @@ Additional guidelines for explanations:
 - Use markdown formatting (headers, **bold**, \`code references\`)
 - Reference specific function/variable names from the snippets
 - Keep explanations concise but insightful (3-8 sentences typical)
-- The overview view (first) has empty snippets array, just explanation
+- The overview chapter (first) has empty snippets array, just explanation
 - Use phrases like "Notice how...", "This is where...", "Building on..."
 - Don't just describe what the code does - explain WHY it's designed this way
 
@@ -422,7 +422,7 @@ When story.json is complete, generation is finished.`;
       addLog(generationId, 'story.json found, processing...');
       try {
         const story = JSON.parse(fs.readFileSync(storyPath, 'utf-8'));
-        addLog(generationId, `Story parsed: "${story.title}" with ${story.views?.length || 0} views`);
+        addLog(generationId, `Story parsed: "${story.title}" with ${story.chapters?.length || 0} chapters`);
 
         // Copy to stories directory
         const finalPath = path.join(STORIES_DIR, `${story.id}.json`);
@@ -461,8 +461,8 @@ When story.json is complete, generation is finished.`;
 
 const PORT = 3001;
 app.listen(PORT, () => {
-  console.log(`Code Journey server running on port ${PORT}`);
-  console.log(`Mode: ${TEST_MODE ? 'TEST (analyzing code-journey itself)' : 'PRODUCTION (analyzing parent repo)'}`);
+  console.log(`Code Stories server running on port ${PORT}`);
+  console.log(`Mode: ${TEST_MODE ? 'TEST (analyzing code-stories itself)' : 'PRODUCTION (analyzing parent repo)'}`);
   console.log(`Codebase directory: ${CODEBASE_DIR}`);
   console.log(`Stories directory: ${STORIES_DIR}`);
 });
