@@ -234,7 +234,7 @@ Write to: ${generationDir}/narrative_outline.md
 Structure as:
 
 ## Story Title
-(A clear, descriptive title for this code journey)
+(A clear, descriptive title for this code story)
 
 ## Overview
 (2-3 sentences summarizing what this story will cover and why it matters)

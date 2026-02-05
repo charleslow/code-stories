@@ -3,29 +3,30 @@ import type { CodeSnippet } from '../types';
 
 interface CodePanelProps {
   snippets: CodeSnippet[];
+  style?: React.CSSProperties;
 }
 
-export function CodePanel({ snippets }: CodePanelProps) {
+export function CodePanel({ snippets, style }: CodePanelProps) {
   if (snippets.length === 0) {
     return (
-      <div className="code-panel empty">
+      <div className="code-panel empty" style={style}>
         <p className="no-code">This chapter contains no code snippets.</p>
       </div>
     );
   }
 
   return (
-    <div className="code-panel">
+    <div className="code-panel" style={style}>
       {snippets.map((snippet, index) => (
         <div key={index} className="snippet">
           <div className="snippet-header">
             <span className="file-path">{snippet.filePath}</span>
             <span className="line-range">
-              Lines {snippet.startLine}-{snippet.endLine}
+              L{snippet.startLine}–{snippet.endLine}
             </span>
           </div>
           <Highlight
-            theme={themes.vsDark}
+            theme={themes.oneDark}
             code={snippet.content}
             language="python"
           >

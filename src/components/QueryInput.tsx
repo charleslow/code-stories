@@ -19,7 +19,7 @@ export function QueryInput({ stories, onGenerate, onSelectStory }: QueryInputPro
 
   return (
     <div className="query-input">
-      <h1>Code Journey</h1>
+      <h1>Code Stories</h1>
       <p className="tagline">Understand code through narrative-driven stories</p>
 
       <form onSubmit={handleSubmit} className="query-form">

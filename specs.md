@@ -109,8 +109,9 @@ This approach:
 | Layer | Technology |
 |-------|------------|
 | Frontend | React (with TypeScript) |
-| Styling | Tailwind CSS or CSS Modules |
-| Syntax Highlighting | Prism.js or highlight.js (Python support) |
+| Styling | Custom CSS with design tokens |
+| Syntax Highlighting | prism-react-renderer with One Dark theme |
+| Font | JetBrains Mono (Google Fonts) |
 | Markdown Rendering | react-markdown |
 | AI Integration | Claude CLI (subprocess invocation) |
 | Storage | Local filesystem (JSON files) |
@@ -628,7 +629,7 @@ Write to: {tmp_dir}/narrative_outline.md
 Structure as:
 
 ## Story Title
-(A clear, descriptive title for this code journey)
+(A clear, descriptive title for this code story)
 
 ## Overview
 (2-3 sentences summarizing what this story will cover and why it matters)
