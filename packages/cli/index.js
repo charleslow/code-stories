@@ -5,6 +5,7 @@ import ora from 'ora';
 import { spawn, execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 
 // Configuration
@@ -22,11 +23,44 @@ function ensureDirectories() {
 }
 
 // Get current commit hash
-function getCommitHash() {
+function getCommitHash(cwd = process.cwd()) {
   try {
-    return execSync('git rev-parse HEAD', { encoding: 'utf-8' }).trim();
+    return execSync('git rev-parse HEAD', { cwd, encoding: 'utf-8' }).trim();
   } catch {
     return 'unknown';
+  }
+}
+
+// Parse GitHub repo identifier (supports user/repo or full URL)
+function parseGitHubRepo(repo) {
+  const urlMatch = repo.match(/github\.com[/:]([^/]+\/[^/.]+)/);
+  if (urlMatch) {
+    return urlMatch[1];
+  }
+  return repo;
+}
+
+// Clone a GitHub repo to a temp directory
+function cloneRepo(repo, spinner) {
+  const repoId = parseGitHubRepo(repo);
+  const cloneUrl = `https://github.com/${repoId}.git`;
+  const tempDir = path.join(os.tmpdir(), `code-stories-${uuidv4()}`);
+
+  spinner.text = `Cloning ${repoId}...`;
+  execSync(`git clone --depth 1 "${cloneUrl}" "${tempDir}"`, {
+    encoding: 'utf-8',
+    stdio: 'pipe',
+  });
+
+  return { tempDir, repoId };
+}
+
+// Clean up cloned repo
+function cleanupClone(tempDir) {
+  try {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  } catch {
+    // Ignore cleanup errors
   }
 }
 
@@ -280,17 +314,22 @@ When story.json is complete, generation is finished.`;
 }
 
 // Generate a story
-async function generateStory(query) {
+async function generateStory(query, options = {}) {
+  const { cwd = process.cwd(), repoId = null } = options;
+
   ensureDirectories();
 
   const generationId = uuidv4();
   const generationDir = path.join(TMP_DIR, generationId);
   fs.mkdirSync(generationDir, { recursive: true });
 
-  const commitHash = getCommitHash();
+  const commitHash = getCommitHash(cwd);
   const prompt = buildPrompt(query, generationDir, commitHash, generationId);
 
   console.log('\n  Code Stories Generator\n');
+  if (repoId) {
+    console.log(`  Repo: ${repoId}`);
+  }
   console.log(`  Query: "${query}"`);
   console.log(`  Commit: ${commitHash.slice(0, 7)}`);
   console.log('');
@@ -321,7 +360,7 @@ async function generateStory(query) {
       '--allowedTools', allowedTools,
       '--add-dir', generationDir,
     ], {
-      cwd: process.cwd(),
+      cwd,
       env: { ...process.env },
     });
 
@@ -389,17 +428,59 @@ async function generateStory(query) {
   });
 }
 
+// Track cloned directory globally for signal handlers
+let activeCloneDir = null;
+
+function cleanupAndExit(code) {
+  if (activeCloneDir) {
+    cleanupClone(activeCloneDir);
+    activeCloneDir = null;
+  }
+  process.exit(code);
+}
+
+// Handle termination signals
+process.on('SIGINT', () => cleanupAndExit(130));
+process.on('SIGTERM', () => cleanupAndExit(143));
+
 // CLI setup
 program
   .name('code-stories')
   .description('Generate narrative-driven code stories using Claude')
   .version('0.1.0')
   .argument('<query>', 'Question about the codebase to generate a story for')
-  .action(async (query) => {
+  .option('-r, --repo <repo>', 'GitHub repository (user/repo or full URL)')
+  .action(async (query, options) => {
+    let repoId = null;
+    let exitCode = 0;
+
+    const spinner = ora({ prefixText: '  ' });
+
     try {
-      await generateStory(query);
+      if (options.repo) {
+        spinner.start();
+        const result = cloneRepo(options.repo, spinner);
+        activeCloneDir = result.tempDir;
+        repoId = result.repoId;
+        spinner.stop();
+      }
+
+      await generateStory(query, {
+        cwd: activeCloneDir || process.cwd(),
+        repoId,
+      });
     } catch (error) {
-      process.exit(1);
+      spinner.fail(error.message);
+      exitCode = 1;
+    } finally {
+      if (activeCloneDir) {
+        cleanupClone(activeCloneDir);
+        activeCloneDir = null;
+      }
+    }
+
+    if (exitCode !== 0) {
+      process.exit(exitCode);
     }
   });
 

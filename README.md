@@ -18,6 +18,9 @@ npm install -g code-stories
 cd my-project
 code-stories "How does the authentication flow work?"
 
+# Or analyze any public GitHub repo directly
+code-stories --repo user/repo "How does the authentication flow work?"
+
 # Output: ./stories/{id}.json
 ```
 
