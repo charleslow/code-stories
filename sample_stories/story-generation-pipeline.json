@@ -1,0 +1,149 @@
+{
+  "id": "story-generation-pipeline",
+  "title": "From Query to Code Story: Inside the Generation Pipeline",
+  "query": "How does the story generation pipeline work?",
+  "commitHash": "ace2e6324d6d545e573d227d679a08d06b0df960",
+  "createdAt": "2026-02-06T07:18:59.292Z",
+  "chapters": [
+    {
+      "id": "chapter-0",
+      "label": "The Big Picture",
+      "snippets": [],
+      "explanation": "The story generation pipeline transforms a natural-language question about a codebase into a richly annotated, chapter-by-chapter walkthrough. The entire pipeline lives in a single file — `packages/cli/index.js` — and follows a straightforward architecture: a Node.js CLI spawns the Claude CLI as a subprocess, feeds it a comprehensive multi-stage prompt, monitors progress through file-based checkpoints, and collects the final JSON output.\n\nThe pipeline has five stages: **explore** the codebase, **outline** a narrative, **review** the outline, **identify code snippets**, and **craft explanations** into the final JSON. Each stage writes its output to a temporary directory, and each must complete before the next begins. The result is a self-contained JSON file that can be served as a static asset and rendered by the companion viewer app.\n\nLet's trace this pipeline from the moment a user types their query to the moment a finished story lands on disk."
+    },
+    {
+      "id": "chapter-1",
+      "label": "CLI Entry Point",
+      "snippets": [
+        {
+          "filePath": "packages/cli/index.js",
+          "startLine": 1,
+          "endLine": 12,
+          "content": "#!/usr/bin/env node\n\nimport { program } from 'commander';\nimport ora from 'ora';\nimport { spawn, execSync } from 'child_process';\nimport fs from 'fs';\nimport path from 'path';\nimport { v4 as uuidv4 } from 'uuid';\n\n// Configuration\nconst STORIES_DIR = './stories';\nconst TMP_DIR = path.join(STORIES_DIR, '.tmp');"
+        },
+        {
+          "filePath": "packages/cli/index.js",
+          "startLine": 391,
+          "endLine": 405,
+          "content": "// CLI setup\nprogram\n  .name('code-stories')\n  .description('Generate narrative-driven code stories using Claude')\n  .version('0.1.0')\n  .argument('<query>', 'Question about the codebase to generate a story for')\n  .action(async (query) => {\n    try {\n      await generateStory(query);\n    } catch (error) {\n      process.exit(1);\n    }\n  });\n\nprogram.parse();"
+        }
+      ],
+      "explanation": "The pipeline starts here. The first snippet shows the top of the file — a shebang line marking it as a Node.js executable, followed by imports for the three external dependencies: `commander` for CLI argument parsing, `ora` for the terminal spinner, and `uuid` for generating unique story IDs. The two constants `STORIES_DIR` and `TMP_DIR` establish where finished stories and in-progress work live on disk.\n\nThe second snippet jumps to the bottom of the file where `commander` wires everything together. Notice how the CLI takes a single required argument — `<query>` — which is the user's question about the codebase. The action handler simply calls `generateStory(query)` and exits with code 1 on failure. This is the entire surface area of the CLI: one command, one argument, one function call.\n\nWith the query captured, let's see what `generateStory` does when it's called."
+    },
+    {
+      "id": "chapter-2",
+      "label": "Workspace Setup",
+      "snippets": [
+        {
+          "filePath": "packages/cli/index.js",
+          "startLine": 15,
+          "endLine": 31,
+          "content": "function ensureDirectories() {\n  if (!fs.existsSync(STORIES_DIR)) {\n    fs.mkdirSync(STORIES_DIR, { recursive: true });\n  }\n  if (!fs.existsSync(TMP_DIR)) {\n    fs.mkdirSync(TMP_DIR, { recursive: true });\n  }\n}\n\n// Get current commit hash\nfunction getCommitHash() {\n  try {\n    return execSync('git rev-parse HEAD', { encoding: 'utf-8' }).trim();\n  } catch {\n    return 'unknown';\n  }\n}"
+        },
+        {
+          "filePath": "packages/cli/index.js",
+          "startLine": 283,
+          "endLine": 296,
+          "content": "async function generateStory(query) {\n  ensureDirectories();\n\n  const generationId = uuidv4();\n  const generationDir = path.join(TMP_DIR, generationId);\n  fs.mkdirSync(generationDir, { recursive: true });\n\n  const commitHash = getCommitHash();\n  const prompt = buildPrompt(query, generationDir, commitHash, generationId);\n\n  console.log('\\n  Code Stories Generator\\n');\n  console.log(`  Query: \"${query}\"`);\n  console.log(`  Commit: ${commitHash.slice(0, 7)}`);\n  console.log('');"
+        }
+      ],
+      "explanation": "Building on the entry point we just saw, `generateStory` begins by preparing the workspace. The first snippet shows two utility functions: `ensureDirectories()` creates the `stories/` and `stories/.tmp/` directories if they don't already exist, and `getCommitHash()` runs `git rev-parse HEAD` to capture the current commit. Notice the graceful fallback to `'unknown'` — the pipeline doesn't require git, but it uses commit hashes to anchor each story to a specific code snapshot.\n\nThe second snippet shows `generateStory` itself kicking off. It generates a UUID for this story, creates a unique temp directory at `stories/.tmp/{uuid}/`, captures the commit hash, and builds the prompt. The console output gives the user immediate feedback: their query and the abbreviated commit hash.\n\nThis workspace — the temp directory — is where all intermediate files will be written during generation. Next, let's look at the prompt that drives the entire pipeline."
+    },
+    {
+      "id": "chapter-3",
+      "label": "The Prompt Blueprint",
+      "snippets": [
+        {
+          "filePath": "packages/cli/index.js",
+          "startLine": 34,
+          "endLine": 40,
+          "content": "const STAGES = [\n  { file: 'exploration_notes.md', checkpoint: 'STAGE_1_COMPLETE', label: 'Exploring codebase' },\n  { file: 'narrative_outline.md', checkpoint: 'STAGE_2_COMPLETE', label: 'Creating narrative outline' },\n  { file: 'narrative_outline.md', checkpoint: 'STAGE_3_COMPLETE', label: 'Reviewing flow' },\n  { file: 'snippets_mapping.md', checkpoint: 'STAGE_4_COMPLETE', label: 'Identifying code snippets' },\n  { file: 'story.json', checkpoint: null, label: 'Crafting explanations' },\n];"
+        },
+        {
+          "filePath": "packages/cli/index.js",
+          "startLine": 64,
+          "endLine": 100,
+          "content": "function buildPrompt(query, generationDir, commitHash, generationId) {\n  const jsonSchema = `{\n  \"id\": \"string (UUID)\",\n  \"title\": \"string\",\n  \"query\": \"string\",\n  \"commitHash\": \"string\",\n  \"createdAt\": \"string (ISO 8601)\",\n  \"chapters\": [\n    {\n      \"id\": \"string (e.g., chapter-0)\",\n      \"label\": \"string (2-4 words for sidebar)\",\n      \"snippets\": [\n        {\n          \"filePath\": \"string (relative path)\",\n          \"startLine\": \"number (1-indexed)\",\n          \"endLine\": \"number (1-indexed)\",\n          \"content\": \"string (actual code)\"\n        }\n      ],\n      \"explanation\": \"string (markdown)\"\n    }\n  ]\n}`;\n\n  return `You are creating a \"code story\" - a narrative-driven walkthrough that answers:\n\"${query}\"\n\nA code story is a sequence of \"chapters\". Each chapter shows a code snippet alongside\na markdown explanation. The story should flow like a guided tour through the\ncodebase, not a dry reference manual.\n\nCRITICAL INSTRUCTIONS:\n1. You MUST complete each stage fully before proceeding to the next\n2. You MUST write the checkpoint marker at the end of each stage's file\n3. You MUST verify the previous checkpoint exists before starting a new stage\n4. Do NOT skip stages or work on multiple stages simultaneously\n"
+        }
+      ],
+      "explanation": "This is the heart of the pipeline's design. The `STAGES` constant (first snippet) defines five stages, each with a `file` it should produce, a `checkpoint` marker to look for, and a `label` for the progress spinner. Notice that stages 2 and 3 share the same file (`narrative_outline.md`) — stage 3 revises the outline in place, replacing the stage 2 checkpoint with its own. The final stage (`story.json`) has `checkpoint: null` because its mere existence signals completion.\n\nThe second snippet shows `buildPrompt()`, which constructs a single comprehensive prompt containing instructions for all five stages. It embeds the JSON schema that the final output must match, interpolates the user's query, and lays down critical instructions: stages must be completed sequentially, each must write its checkpoint marker, and each must verify the previous checkpoint before proceeding.\n\nThis is a key architectural decision — rather than running Claude in a multi-turn conversation, the pipeline sends **one prompt** with all instructions and lets Claude work autonomously. The `STAGES` constant then acts as a mirror of the prompt's structure, letting the CLI track progress from the outside. Next, we'll see how Claude is actually launched."
+    },
+    {
+      "id": "chapter-4",
+      "label": "Spawning Claude",
+      "snippets": [
+        {
+          "filePath": "packages/cli/index.js",
+          "startLine": 314,
+          "endLine": 334,
+          "content": "  return new Promise((resolve, reject) => {\n    // Spawn Claude CLI\n    const allowedTools = 'Read,Grep,Glob,Write';\n    const claude = spawn('claude', [\n      '-p',\n      '--dangerously-skip-permissions',\n      '--allowedTools', allowedTools,\n      '--add-dir', generationDir,\n    ], {\n      cwd: process.cwd(),\n      env: { ...process.env },\n    });\n\n    // Send prompt via stdin\n    claude.stdin.write(prompt);\n    claude.stdin.end();\n\n    let stderr = '';\n    claude.stderr.on('data', (data) => {\n      stderr += data.toString();\n    });\n"
+        }
+      ],
+      "explanation": "Building on the prompt we just examined, this is where the CLI hands off control to Claude. The `spawn` call launches the `claude` CLI binary with carefully chosen flags:\n\n- **`-p`** (print mode): Claude runs non-interactively, producing output without a TUI\n- **`--dangerously-skip-permissions`**: Bypasses interactive permission prompts since this is an automated pipeline\n- **`--allowedTools Read,Grep,Glob,Write`**: This is the security boundary — Claude can read and search the codebase and write output files, but it **cannot** run shell commands, make network requests, or access any other tools\n- **`--add-dir`**: Grants write access to the generation temp directory\n\nThe prompt is sent via stdin (`claude.stdin.write(prompt)`) and the stream is immediately closed. From this point forward, Claude works autonomously through the five stages while the CLI monitors progress. Stderr is captured separately for error reporting. Let's see how that monitoring works."
+    },
+    {
+      "id": "chapter-5",
+      "label": "Progress Tracking",
+      "snippets": [
+        {
+          "filePath": "packages/cli/index.js",
+          "startLine": 43,
+          "endLine": 61,
+          "content": "function getCurrentStage(generationDir) {\n  let stage = 0;\n\n  for (let i = 0; i < STAGES.length; i++) {\n    const { file, checkpoint } = STAGES[i];\n    const filePath = path.join(generationDir, file);\n\n    if (!fs.existsSync(filePath)) break;\n\n    if (checkpoint) {\n      const content = fs.readFileSync(filePath, 'utf-8');\n      if (!content.includes(checkpoint)) break;\n    }\n\n    stage = i + 1;\n  }\n\n  return stage;\n}"
+        },
+        {
+          "filePath": "packages/cli/index.js",
+          "startLine": 298,
+          "endLine": 312,
+          "content": "  const spinner = ora({\n    text: STAGES[0].label,\n    prefixText: '  ',\n  }).start();\n\n  let currentStage = 0;\n\n  // Poll for progress updates\n  const progressInterval = setInterval(() => {\n    const stage = getCurrentStage(generationDir);\n    if (stage !== currentStage && stage < STAGES.length) {\n      currentStage = stage;\n      spinner.text = STAGES[stage].label;\n    }\n  }, 1000);"
+        }
+      ],
+      "explanation": "This is where the `STAGES` constant we saw earlier pays off. `getCurrentStage()` (first snippet) iterates through the stages array, checking two things for each stage: does the expected file exist, and does it contain the expected checkpoint string? The function breaks at the first incomplete stage and returns the highest completed stage index. Notice the subtle handling of `checkpoint: null` for the final stage — when `checkpoint` is falsy, file existence alone is sufficient.\n\nThe second snippet shows the polling loop. An `ora` spinner starts with the first stage's label, and a `setInterval` calls `getCurrentStage()` every second. When the detected stage advances, the spinner text updates to the new stage's label. This creates a smooth progress experience: the user sees \"Exploring codebase\" transition to \"Creating narrative outline\" to \"Reviewing flow\" and so on.\n\nThis is a **decoupled** progress system — the CLI and Claude communicate only through the filesystem. Claude writes checkpoint markers as part of its normal output, and the CLI reads them independently. No IPC, no callbacks, no shared state. When Claude's process finally exits, the CLI needs to handle the result."
+    },
+    {
+      "id": "chapter-6",
+      "label": "Completion and Output",
+      "snippets": [
+        {
+          "filePath": "packages/cli/index.js",
+          "startLine": 342,
+          "endLine": 389,
+          "content": "    claude.on('close', (code) => {\n      clearInterval(progressInterval);\n\n      // Check if story.json was created\n      const storyPath = path.join(generationDir, 'story.json');\n      if (fs.existsSync(storyPath)) {\n        try {\n          const story = JSON.parse(fs.readFileSync(storyPath, 'utf-8'));\n\n          // Copy to stories directory\n          const finalPath = path.join(STORIES_DIR, `${story.id}.json`);\n          fs.writeFileSync(finalPath, JSON.stringify(story, null, 2));\n\n          // Update manifest\n          const manifestPath = path.join(STORIES_DIR, 'manifest.json');\n          let manifest = { stories: [] };\n          if (fs.existsSync(manifestPath)) {\n            manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));\n          }\n          manifest.stories.unshift({\n            id: story.id,\n            title: story.title,\n            commitHash: story.commitHash,\n            createdAt: story.createdAt,\n          });\n          fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));\n\n          // Clean up tmp directory\n          fs.rmSync(generationDir, { recursive: true, force: true });\n\n          spinner.succeed(`Story generated: ${story.title}`);\n          console.log(`\\n  Saved to: ${finalPath}\\n`);\n          resolve(story);\n        } catch (error) {\n          spinner.fail(`Error processing story: ${error.message}`);\n          reject(error);\n        }\n      } else {\n        spinner.fail('Generation failed - story.json not created');\n        console.log(`\\n  Check intermediate files in: ${generationDir}\\n`);\n        if (stderr) {\n          console.log(`  stderr: ${stderr.slice(0, 500)}\\n`);\n        }\n        reject(new Error('story.json not created'));\n      }\n    });\n  });\n}"
+        }
+      ],
+      "explanation": "When Claude's process exits, the pipeline reaches its conclusion. The `close` handler first stops the progress polling, then checks whether `story.json` exists in the temp directory.\n\n**On success** (lines 347-374): The story JSON is parsed, then copied to its permanent location at `stories/{id}.json`. The manifest (`stories/manifest.json`) is loaded or initialized, and the new story's metadata is prepended with `unshift()` — putting the newest story first. After writing the manifest, the entire temp directory is deleted with `fs.rmSync`. The spinner shows a success message with the story's title.\n\n**On failure** (lines 379-386): The temp directory is deliberately **preserved** so the developer can inspect intermediate files (`exploration_notes.md`, `narrative_outline.md`, etc.) to diagnose what went wrong. Stderr output is shown if available.\n\nThis is an **atomic success** pattern: either the full pipeline completes and produces a valid story, or nothing changes in permanent storage. The temp directory serves as both a workspace and a debugging artifact. Now let's see what the output structure actually looks like."
+    },
+    {
+      "id": "chapter-7",
+      "label": "The Story Schema",
+      "snippets": [
+        {
+          "filePath": "packages/viewer/src/types/index.ts",
+          "startLine": 1,
+          "endLine": 39,
+          "content": "// Core data types for Code Stories\n\nexport interface Story {\n  id: string;\n  title: string;\n  query: string;\n  commitHash: string;\n  createdAt: string;\n  chapters: Chapter[];\n}\n\nexport interface Chapter {\n  id: string;\n  label: string;\n  snippets: CodeSnippet[];\n  explanation: string;\n}\n\nexport interface CodeSnippet {\n  filePath: string;\n  startLine: number;\n  endLine: number;\n  content: string;\n}\n\n// Manifest for tracking all stories\nexport interface StoryManifest {\n  stories: StoryMetadata[];\n}\n\nexport interface StoryMetadata {\n  id: string;\n  title: string;\n  commitHash: string;\n  createdAt: string;\n}\n\n// App state for viewer\nexport type AppState = 'home' | 'loading' | 'reading' | 'error';"
+        }
+      ],
+      "explanation": "Building on the JSON we just saw being written to disk, these TypeScript types define the data contract between the CLI and the viewer. The `Story` interface mirrors the JSON schema we saw embedded in the prompt — `id`, `title`, `query`, `commitHash`, `createdAt`, and an array of `chapters`.\n\nEach `Chapter` has a short `label` (used in the viewer's sidebar navigation), an array of `snippets`, and a markdown `explanation`. The `CodeSnippet` type captures not just the file path and line range but the **actual code content** — making each story fully self-contained. The viewer doesn't need access to the original repository to display a story.\n\nNotice the separate `StoryManifest` and `StoryMetadata` types. The manifest contains just enough metadata (id, title, commitHash, createdAt) to render a story listing without loading every story's full content. This is the same structure the CLI populates when it calls `manifest.stories.unshift()` in the completion handler. Let's see how the viewer uses these types."
+    },
+    {
+      "id": "chapter-8",
+      "label": "Story Consumption",
+      "snippets": [
+        {
+          "filePath": "packages/viewer/src/services/api.ts",
+          "startLine": 1,
+          "endLine": 51,
+          "content": "// API client for fetching stories from URLs\n\nimport type { Story, StoryManifest } from '../types';\n\n/**\n * Parse URL parameters to determine story source\n * Supports:\n * - ?url=<direct-url-to-json>\n * - ?repo=user/repo&story=story-id (GitHub shorthand)\n */\nexport function getStoryUrlFromParams(params: URLSearchParams): string | null {\n  const directUrl = params.get('url');\n  if (directUrl) return directUrl;\n\n  const repo = params.get('repo');\n  const story = params.get('story');\n  if (repo && story) {\n    return `https://raw.githubusercontent.com/${repo}/main/stories/${story}.json`;\n  }\n\n  return null;\n}\n\n/**\n * Parse URL parameters to determine manifest source\n * Supports:\n * - ?manifest=<direct-url-to-manifest>\n * - ?repo=user/repo (GitHub shorthand - loads manifest)\n */\nexport function getManifestUrlFromParams(params: URLSearchParams): string | null {\n  const manifestUrl = params.get('manifest');\n  if (manifestUrl) return manifestUrl;\n\n  const repo = params.get('repo');\n  if (repo && !params.get('story')) {\n    return `https://raw.githubusercontent.com/${repo}/main/stories/manifest.json`;\n  }\n\n  return null;\n}\n\n/**\n * Fetch a story from a URL\n */\nexport async function fetchStory(url: string): Promise<Story> {\n  const response = await fetch(url);\n  if (!response.ok) {\n    throw new Error(`Failed to fetch story: ${response.status} ${response.statusText}`);\n  }\n  return response.json();\n}"
+        }
+      ],
+      "explanation": "This closes the loop. The viewer's API service reveals **why** the CLI outputs self-contained JSON files — they're designed to be fetched over HTTP as static assets.\n\n`getStoryUrlFromParams` supports two loading modes: a direct URL (`?url=...`) for arbitrary hosting, and a GitHub shorthand (`?repo=user/repo&story=story-id`) that constructs a `raw.githubusercontent.com` URL pointing into the repo's `stories/` directory. This means a project can generate stories, commit them alongside its code, and readers can view them without any backend — just a static file server or GitHub.\n\n`getManifestUrlFromParams` works similarly for the manifest file, enabling the viewer to list all available stories for a repository. Notice how it checks `!params.get('story')` — if a specific story is requested, it skips the manifest.\n\nThe `fetchStory` function is straightforward: fetch the URL, check for errors, parse as JSON. The `Story` type import at the top connects directly back to the schema we just examined. The entire pipeline — from `code-stories \"How does X work?\"` to a rendered story in the browser — is built on this simple contract: a JSON file served over HTTP."
+    },
+    {
+      "id": "chapter-9",
+      "label": "Full Circle",
+      "snippets": [],
+      "explanation": "We've now traced the complete story generation pipeline from start to finish. Let's recap the key design decisions that make it work:\n\n**Single-prompt architecture**: Rather than engaging Claude in a multi-turn conversation, the pipeline sends one comprehensive prompt containing all five stage instructions. This makes the process deterministic and self-contained — Claude has all the context it needs from the start.\n\n**File-based checkpointing**: The `STAGES` array and checkpoint markers create a decoupled communication channel between the CLI and Claude. The CLI polls the filesystem; Claude writes markers as part of its normal output. No IPC, no shared memory, no coordination protocol — just files on disk.\n\n**Restricted tool access**: By limiting Claude to `Read`, `Grep`, `Glob`, and `Write`, the pipeline ensures Claude can explore the codebase and produce output but cannot execute arbitrary code or access the network. This is a practical security boundary for an automated AI pipeline.\n\n**Atomic success with debuggable failure**: Completed stories are atomically moved to permanent storage and the temp directory is deleted. Failed generations preserve all intermediate files for debugging.\n\n**Static JSON output**: Stories are self-contained JSON files with embedded code content, designed to be served as static assets. This enables zero-backend deployment — commit your stories to a repo and serve them from GitHub.\n\nThe pipeline is, in a sense, a story about itself: a single file that orchestrates an AI to produce structured narratives about code."
+    }
+  ]
+}

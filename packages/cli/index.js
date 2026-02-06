@@ -296,7 +296,7 @@ async function generateStory(query) {
   console.log('');
 
   const spinner = ora({
-    text: STAGES[0].label,
+    text: `${STAGES[0].label} (0%)`,
     prefixText: '  ',
   }).start();
 
@@ -307,7 +307,8 @@ async function generateStory(query) {
     const stage = getCurrentStage(generationDir);
     if (stage !== currentStage && stage < STAGES.length) {
       currentStage = stage;
-      spinner.text = STAGES[stage].label;
+      const percent = Math.round((stage / STAGES.length) * 100);
+      spinner.text = `${STAGES[stage].label} (${percent}%)`;
     }
   }, 1000);
 

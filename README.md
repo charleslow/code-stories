@@ -55,9 +55,9 @@ npm run preview
 # Opens at http://localhost:4173/code-stories/
 ```
 
-Test with an existing story:
+Test with the sample story:
 ```
-http://localhost:5173/code-stories/?url=https://raw.githubusercontent.com/charleslow/code-stories/main/stories/40b3aa9b-15d5-4190-a20e-9a2fdf648484.json
+http://localhost:5173/code-stories/?url=https://raw.githubusercontent.com/charleslow/code-stories/main/sample_stories/story-generation-pipeline.json
 ```
 
 ### Testing the CLI

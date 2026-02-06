@@ -1,0 +1,10 @@
+{
+  "stories": [
+    {
+      "id": "story-generation-pipeline",
+      "title": "From Query to Code Story: Inside the Generation Pipeline",
+      "commitHash": "ace2e6324d6d545e573d227d679a08d06b0df960",
+      "createdAt": "2026-02-06T07:18:59.292Z"
+    }
+  ]
+}
