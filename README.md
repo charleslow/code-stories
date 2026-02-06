@@ -1,73 +1,67 @@
-# React + TypeScript + Vite
+# Code Stories
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Understand code through narrative-driven stories. Code Stories transforms questions like "How does authentication work?" into guided, chapter-by-chapter walkthroughs of your codebase.
 
-Currently, two official plugins are available:
+## Packages
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+This monorepo contains two packages:
 
-## React Compiler
+### CLI (`packages/cli`)
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Generate stories locally in any repository using Claude.
 
-## Expanding the ESLint configuration
+```bash
+# Install globally
+npm install -g code-stories
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+# Run in any git repo
+cd my-project
+code-stories "How does the authentication flow work?"
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+# Output: ./stories/{id}.json
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+### Viewer (`packages/viewer`)
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+Static web viewer for reading stories. Deployed at [charleslow.github.io/code-stories](https://charleslow.github.io/code-stories/).
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+Supports loading stories via URL parameters:
+- `?url=<direct-url-to-json>`
+- `?repo=user/repo&story=story-id`
+
+## Workflow
+
+1. **Generate**: Run `code-stories "your question"` in any repo
+2. **Commit**: Stories are saved to `./stories/` - commit and push them
+3. **View**: Open the viewer with `?repo=your/repo&story=story-id`
+
+## Development
+
+```bash
+# Install dependencies
+npm install
+
+# Run viewer locally
+npm run dev
+
+# Build viewer for production
+npm run build
 ```
+
+## How It Works
+
+Code Stories uses a 5-stage generation pipeline:
+
+1. **Explore** - Analyze the codebase structure
+2. **Outline** - Create narrative structure with chapter sequence
+3. **Review** - Refine flow and pacing
+4. **Identify Snippets** - Select exact code segments to display
+5. **Craft Explanations** - Write context-aware prose for each chapter
+
+The result is a JSON file containing chapters, each with code snippets and markdown explanations.
+
+## Requirements
+
+- Node.js 18+
+- [Claude CLI](https://claude.ai/cli) installed and configured
+- Git (for commit hash tracking)

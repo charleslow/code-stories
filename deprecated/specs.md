@@ -1,3 +1,5 @@
+> **Note**: This document describes the original monolithic architecture (Express server + React frontend). The project has been restructured into two packages: a CLI (`packages/cli`) for generation and a static viewer (`packages/viewer`). Core concepts (stories, chapters, JSON schema) remain valid; deployment model and technical architecture sections are outdated.
+
 # Code Stories - Product Specifications
 
 ## 1. Overview
