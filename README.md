@@ -35,18 +35,44 @@ Supports loading stories via URL parameters:
 2. **Commit**: Stories are saved to `./stories/` - commit and push them
 3. **View**: Open the viewer with `?repo=your/repo&story=story-id`
 
-## Development
+## Local Development
 
 ```bash
 # Install dependencies
 npm install
-
-# Run viewer locally
-npm run dev
-
-# Build viewer for production
-npm run build
 ```
+
+### Testing the Viewer
+
+```bash
+# Development server (hot reload)
+npm run dev
+# Opens at http://localhost:5173/code-stories/
+
+# Production build + preview
+npm run build
+npm run preview
+# Opens at http://localhost:4173/code-stories/
+```
+
+Test with an existing story:
+```
+http://localhost:5173/code-stories/?url=https://raw.githubusercontent.com/charleslow/code-stories/main/stories/40b3aa9b-15d5-4190-a20e-9a2fdf648484.json
+```
+
+### Testing the CLI
+
+```bash
+# Run directly from repo
+node packages/cli/index.js "How does the viewer load stories?"
+
+# Or link globally for testing
+cd packages/cli && npm link
+cd /path/to/any/repo
+code-stories "Your question here"
+```
+
+Requires [Claude CLI](https://claude.ai/cli) to be installed and configured.
 
 ## How It Works
 
