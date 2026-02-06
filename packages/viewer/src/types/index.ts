@@ -4,6 +4,7 @@ export interface Story {
   id: string;
   title: string;
   query: string;
+  repo?: string | null;
   commitHash: string;
   createdAt: string;
   chapters: Chapter[];

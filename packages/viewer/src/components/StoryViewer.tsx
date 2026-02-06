@@ -51,8 +51,8 @@ export function StoryViewer({ story, onBack }: StoryViewerProps) {
           ← Back
         </button>
         <h1>{story.title}</h1>
-        <span className="commit-hash" title={story.commitHash}>
-          {story.commitHash.slice(0, 7)}
+        <span className="commit-hash" title={story.repo ? `${story.repo} @ ${story.commitHash}` : story.commitHash}>
+          {story.repo ? `${story.repo} @ ` : ''}{story.commitHash.slice(0, 7)}
         </span>
       </header>
       <div className="story-body">

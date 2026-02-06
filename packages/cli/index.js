@@ -95,11 +95,12 @@ function getCurrentStage(generationDir) {
 }
 
 // Build the prompt for Claude
-function buildPrompt(query, generationDir, commitHash, generationId) {
+function buildPrompt(query, generationDir, commitHash, generationId, repoId) {
   const jsonSchema = `{
   "id": "string (UUID)",
   "title": "string",
   "query": "string",
+  "repo": "string or null (GitHub user/repo if from remote)",
   "commitHash": "string",
   "createdAt": "string (ISO 8601)",
   "chapters": [
@@ -296,6 +297,7 @@ Write to: ${generationDir}/story.json
 Use these values:
 - id: "${generationId}"
 - query: "${query.replace(/"/g, '\\"')}"
+- repo: ${repoId ? `"${repoId}"` : 'null'}
 - commitHash: "${commitHash}"
 - createdAt: "${new Date().toISOString()}"
 
@@ -324,7 +326,7 @@ async function generateStory(query, options = {}) {
   fs.mkdirSync(generationDir, { recursive: true });
 
   const commitHash = getCommitHash(cwd);
-  const prompt = buildPrompt(query, generationDir, commitHash, generationId);
+  const prompt = buildPrompt(query, generationDir, commitHash, generationId, repoId);
 
   console.log('\n  Code Stories Generator\n');
   if (repoId) {
