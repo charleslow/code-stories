@@ -20,9 +20,14 @@ RUN chmod +x index.js
 COPY optimization/ ./optimization/
 
 # Initialize a git repo so the CLI can get a commit hash
-RUN git init && git add -A && git commit -m "init" --allow-empty
+RUN git config --global user.email "optimizer@code-stories" && \
+    git config --global user.name "Optimizer" && \
+    git config --system --add safe.directory /app && \
+    git config --system --add safe.directory '*' && \
+    git init && git add -A && git commit -m "init" --allow-empty
 
 # Create stories output directory
-RUN mkdir -p stories
+# Make /app and /tmp writable for --user runtime mapping (non-root user needs write access)
+RUN mkdir -p stories && chmod -R 777 /app /tmp
 
 ENTRYPOINT ["node", "optimization/optimize.mjs"]

@@ -67,9 +67,11 @@ echo ""
 
 docker run \
   --name "$CONTAINER_NAME" \
+  --user "$(id -u):$(id -g)" \
+  -e HOME=/tmp/home \
   -e MAX_ITERATIONS="${MAX_ITERATIONS:-5}" \
   -e QUERIES_TO_TEST="${QUERIES_TO_TEST:-2}" \
-  -v "$CLAUDE_CONFIG_DIR:/root/.claude:ro" \
+  -v "$CLAUDE_CONFIG_DIR:/tmp/home/.claude:ro" \
   -v "$RESULTS_HOST_DIR:/app/optimization/results" \
   "$IMAGE_NAME"
 
