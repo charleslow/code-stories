@@ -10,7 +10,7 @@ set -euo pipefail
 #
 # Prerequisites:
 #   - Docker installed
-#   - ANTHROPIC_API_KEY set in environment (or in .env file)
+#   - Authenticated via `claude login` (uses your Max subscription)
 #
 # Configuration (via environment variables):
 #   MAX_ITERATIONS   - Number of optimization cycles (default: 5)
@@ -21,7 +21,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLI_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# Load .env if it exists
+# Load .env if it exists (for MAX_ITERATIONS, QUERIES_TO_TEST overrides)
 if [ -f "$SCRIPT_DIR/.env" ]; then
   echo "Loading .env from $SCRIPT_DIR/.env"
   set -a
@@ -29,13 +29,15 @@ if [ -f "$SCRIPT_DIR/.env" ]; then
   set +a
 fi
 
-# Check for API key
-if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
-  echo "ERROR: ANTHROPIC_API_KEY is not set."
+# Check for Claude CLI credentials
+CLAUDE_CONFIG_DIR="${HOME}/.claude"
+if [ ! -d "$CLAUDE_CONFIG_DIR" ]; then
+  echo "ERROR: No Claude CLI credentials found at $CLAUDE_CONFIG_DIR"
   echo ""
-  echo "Set it in one of these ways:"
-  echo "  1. export ANTHROPIC_API_KEY=sk-ant-..."
-  echo "  2. Create packages/cli/optimization/.env with: ANTHROPIC_API_KEY=sk-ant-..."
+  echo "Please authenticate first by running:"
+  echo "  claude login"
+  echo ""
+  echo "This will open your browser to sign in with your Claude Max subscription."
   exit 1
 fi
 
@@ -44,6 +46,8 @@ CONTAINER_NAME="code-stories-opt-$(date +%s)"
 RESULTS_HOST_DIR="$SCRIPT_DIR/results"
 
 echo "=== Code Stories Prompt Optimization ==="
+echo ""
+echo "Auth: Using Claude CLI credentials from $CLAUDE_CONFIG_DIR"
 echo ""
 echo "Building Docker image..."
 docker build -t "$IMAGE_NAME" -f "$SCRIPT_DIR/Dockerfile" "$CLI_DIR"
@@ -63,9 +67,9 @@ echo ""
 
 docker run \
   --name "$CONTAINER_NAME" \
-  -e ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
   -e MAX_ITERATIONS="${MAX_ITERATIONS:-5}" \
   -e QUERIES_TO_TEST="${QUERIES_TO_TEST:-2}" \
+  -v "$CLAUDE_CONFIG_DIR:/root/.claude:ro" \
   -v "$RESULTS_HOST_DIR:/app/optimization/results" \
   "$IMAGE_NAME"
 
