@@ -63,6 +63,11 @@ Test with the sample story:
 http://localhost:5173/code-stories/?url=https://raw.githubusercontent.com/charleslow/code-stories/main/sample_stories/story-generation-pipeline.json
 ```
 
+View locally generated stories (dev mode only):
+```
+http://localhost:5173/code-stories/?url=/local-stories/{story-id}.json
+```
+
 ### Testing the CLI
 
 ```bash

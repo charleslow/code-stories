@@ -8,8 +8,8 @@ import path from 'path';
 import os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 
-// Configuration
-const STORIES_DIR = './stories';
+// Configuration (use absolute paths so they work regardless of cwd)
+const STORIES_DIR = path.resolve('./stories');
 const TMP_DIR = path.join(STORIES_DIR, '.tmp');
 
 // Ensure directories exist
@@ -201,7 +201,7 @@ Guidelines:
 - Each chapter should have ONE main teaching point
 - Chapters should build on each other logically
 - End with resolution/summary if appropriate
-- Aim for 5-15 chapters depending on complexity
+- Aim for 5-25 chapters depending on complexity
 - Labels should be 2-4 words (e.g., "Entry Point", "Parse Request", "Database Query")
 
 End the file with exactly this line:

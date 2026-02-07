@@ -2,18 +2,20 @@
 
 These queries are used to test the code-stories CLI during prompt optimization.
 Each query tests a different aspect of story generation quality.
+Format: `repo: <owner/repo>` line before the query.
 
-## Query 1: Simple flow
-How does the CLI parse command-line arguments and start generating a story?
+## Query 1
+repo: fastapi/fastapi
+Expound on the design principle of fastapi that makes it easy for developers to use.
 
-## Query 2: Multi-file flow
-How does the 5-stage prompt system work from exploration to final JSON output?
+## Query 2
+repo: huggingface/transformers
+Where are the different implementations of flash attention and when do we use each one?
 
-## Query 3: External integration
-How does the tool clone and analyze remote GitHub repositories?
+## Query 3
+repo: galilai-group/llm-jepa
+What are the two forward passes that LLM-JEPA uses and how does it use masking and tied-weights prediction to achieve the goals?
 
-## Query 4: Error handling
-How does the tool handle failures during story generation?
-
-## Query 5: Data transformation
-How does a user's question get transformed into the final story.json output?
+## Query 4
+repo: bentoml/BentoML
+I am not familiar with deploying production ML systems. What makes bentoml useful for ML engineers and which parts of the codebase shed light on their design?

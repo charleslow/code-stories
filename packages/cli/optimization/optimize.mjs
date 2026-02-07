@@ -32,14 +32,20 @@ function readFile(filePath) {
 function parseQueries(queriesMd) {
   const queries = [];
   const lines = queriesMd.split('\n');
+  let currentRepo = null;
   for (const line of lines) {
-    // Lines starting with "## Query" are headers, the actual query is the next non-empty line
     if (line.startsWith('## Query')) {
       continue;
     }
+    const repoMatch = line.match(/^repo:\s*(.+)/i);
+    if (repoMatch) {
+      currentRepo = repoMatch[1].trim();
+      continue;
+    }
     const trimmed = line.trim();
-    if (trimmed && !trimmed.startsWith('#') && !trimmed.startsWith('These queries')) {
-      queries.push(trimmed);
+    if (trimmed && !trimmed.startsWith('#') && !trimmed.startsWith('These queries') && !trimmed.startsWith('Format:')) {
+      queries.push({ query: trimmed, repo: currentRepo });
+      currentRepo = null;
     }
   }
   return queries;
@@ -98,9 +104,11 @@ async function runClaude(prompt, { timeout = 300_000 } = {}) {
   return result.stdout;
 }
 
-async function generateStory(query) {
-  console.log(`  Running: code-stories "${query.slice(0, 60)}..."`);
-  const result = await runCommand('node', [CLI_ENTRY, query], {
+async function generateStory(query, repo) {
+  console.log(`  Running: code-stories "${query.slice(0, 60)}..."${repo ? ` (repo: ${repo})` : ''}`);
+  const args = [CLI_ENTRY, query];
+  if (repo) args.push('--repo', repo);
+  const result = await runCommand('node', args, {
     cwd: '/app',
     timeout: 600_000,
   });
@@ -122,9 +130,10 @@ function getLatestStory() {
   return JSON.parse(readFile(storyPath));
 }
 
-function getPreviousReflections(iteration) {
+function getPreviousReflections(iteration, maxReflections = 3) {
   const reflections = [];
-  for (let i = 1; i < iteration; i++) {
+  const startFrom = Math.max(1, iteration - maxReflections);
+  for (let i = startFrom; i < iteration; i++) {
     const reflPath = path.join(RESULTS_DIR, `iteration-${i}`, 'reflections.md');
     if (fs.existsSync(reflPath)) {
       reflections.push(`### Iteration ${i} Reflections\n${readFile(reflPath)}`);
@@ -156,12 +165,13 @@ async function runIteration(iteration, queries, goals) {
   const selectedQueries = queries.slice(0, QUERIES_TO_TEST);
   const storyResults = [];
 
-  for (const query of selectedQueries) {
-    const result = await generateStory(query);
+  for (const { query, repo } of selectedQueries) {
+    const result = await generateStory(query, repo);
     const story = result.exitCode === 0 ? getLatestStory() : null;
 
     storyResults.push({
       query,
+      repo,
       success: result.exitCode === 0,
       story,
       stdout: result.stdout,
@@ -318,7 +328,7 @@ async function main() {
   console.log(`Queries found: ${queries.length}`);
   console.log(`Max iterations: ${MAX_ITERATIONS}`);
   console.log(`Queries per iteration: ${QUERIES_TO_TEST}`);
-  console.log(`Queries: ${queries.map(q => `"${q.slice(0, 50)}..."`).join(', ')}`);
+  console.log(`Queries: ${queries.map(q => `${q.repo ? `[${q.repo}] ` : ''}"${q.query.slice(0, 50)}..."`).join(', ')}`);
 
   // Save a backup of the original index.js
   fs.copyFileSync(CLI_ENTRY, path.join(RESULTS_DIR, 'index.js.original'));
