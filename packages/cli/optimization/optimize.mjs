@@ -101,8 +101,8 @@ async function runClaude(prompt, { timeout = 300_000 } = {}) {
   });
 
   if (result.code !== 0) {
-    console.error(`  Claude exited with code ${result.code}`);
-    if (result.stderr) console.error(`  stderr: ${result.stderr.slice(0, 500)}`);
+    const stderrSnippet = result.stderr ? result.stderr.slice(0, 500) : 'none';
+    throw new Error(`Claude exited with code ${result.code}. stderr: ${stderrSnippet}`);
   }
   return result.stdout;
 }
@@ -162,6 +162,11 @@ async function runIteration(iteration, queries, goals) {
   console.log(`ITERATION ${iteration} / ${MAX_ITERATIONS}`);
   console.log(`${'='.repeat(60)}\n`);
 
+  // Save the prompt used for this iteration
+  const currentPromptSource = getCurrentPromptSource();
+  fs.writeFileSync(path.join(iterDir, 'current_prompt.js'), currentPromptSource);
+  console.log(`  Current prompt saved to iteration-${iteration}/current_prompt.js`);
+
   // --- Phase 1: Generate stories with current prompt ---
   console.log('Phase 1: Generating stories with current prompt...\n');
 
@@ -185,8 +190,21 @@ async function runIteration(iteration, queries, goals) {
     const safeQuery = query.slice(0, 40).replace(/[^a-zA-Z0-9]/g, '_');
     fs.writeFileSync(
       path.join(iterDir, `story_${safeQuery}.json`),
-      JSON.stringify(story, null, 2) || '{"error": "generation failed"}'
+      JSON.stringify(story || { error: 'generation failed' }, null, 2)
     );
+
+    // Save logs for failed stories
+    if (result.exitCode !== 0) {
+      fs.writeFileSync(
+        path.join(iterDir, `story_${safeQuery}_log.txt`),
+        `EXIT CODE: ${result.exitCode}\n\n--- STDOUT ---\n${result.stdout}\n\n--- STDERR ---\n${result.stderr}`
+      );
+    }
+  }
+
+  // Fail if all stories failed
+  if (!storyResults.some(r => r.success)) {
+    throw new Error(`Iteration ${iteration}: All ${storyResults.length} story generations failed. Cannot proceed with evaluation.`);
   }
 
   // --- Phase 2: Evaluate results and write reflections ---
@@ -246,6 +264,9 @@ Rate how close the current output is to the overall goals. 10 = perfect.
 Be honest and specific. Vague feedback like "make it better" is not useful.`;
 
   const reflections = await runClaude(evaluationPrompt);
+  if (!reflections || reflections.trim().length < 50) {
+    throw new Error(`Iteration ${iteration}: Reflections output is empty or too short (${reflections?.trim().length || 0} chars). Claude may have failed silently.`);
+  }
   fs.writeFileSync(path.join(iterDir, 'reflections.md'), reflections);
   console.log(`  Reflections saved to iteration-${iteration}/reflections.md`);
 
@@ -282,11 +303,17 @@ Focus your changes on:
 Output the complete function, ready to paste into index.js:`;
 
   const improvedFunction = await runClaude(improvementPrompt);
+  if (!improvedFunction || improvedFunction.trim().length < 50) {
+    throw new Error(`Iteration ${iteration}: Improved prompt output is empty or too short (${improvedFunction?.trim().length || 0} chars). Claude may have failed silently.`);
+  }
   fs.writeFileSync(path.join(iterDir, 'improved_prompt.js'), improvedFunction);
   console.log(`  Improved prompt saved to iteration-${iteration}/improved_prompt.js`);
 
   // --- Phase 4: Apply the improvement to index.js ---
   console.log('\nPhase 4: Applying prompt improvement...\n');
+
+  // Create backup before modification
+  fs.copyFileSync(CLI_ENTRY, path.join(iterDir, 'index.js.backup'));
 
   const applyPrompt = `You have access to the filesystem. Your task:
 
@@ -306,12 +333,13 @@ Do not change anything outside the buildPrompt function.`;
     execSync('node --check /app/index.js', { encoding: 'utf-8' });
     console.log('  index.js syntax check passed');
   } catch (e) {
-    console.error('  WARNING: index.js has syntax errors after modification, reverting...');
-    // Revert from backup
+    console.error('  ERROR: index.js has syntax errors after modification, reverting...');
     const backup = path.join(iterDir, 'index.js.backup');
     if (fs.existsSync(backup)) {
       fs.copyFileSync(backup, CLI_ENTRY);
+      console.error('  Reverted to pre-Phase 4 backup.');
     }
+    throw new Error(`Iteration ${iteration}: Phase 4 introduced syntax errors in index.js. Reverted and stopping. Error: ${e.message}`);
   }
 
   // Save a backup of the current state
@@ -326,6 +354,13 @@ async function main() {
   const goals = readFile(path.join(OPTIMIZATION_DIR, 'overall_goals.md'));
   const queriesMd = readFile(path.join(OPTIMIZATION_DIR, 'queries.md'));
   const queries = parseQueries(queriesMd);
+
+  if (queries.length === 0) {
+    throw new Error('No queries parsed from queries.md. Check the file format.');
+  }
+  if (queries.length < QUERIES_TO_TEST) {
+    throw new Error(`Only ${queries.length} queries parsed, but QUERIES_TO_TEST=${QUERIES_TO_TEST}. Add more queries or reduce QUERIES_TO_TEST.`);
+  }
 
   console.log(`Goals loaded from overall_goals.md`);
   console.log(`Queries found: ${queries.length}`);
