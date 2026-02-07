@@ -33,17 +33,20 @@ function parseQueries(queriesMd) {
   const queries = [];
   const lines = queriesMd.split('\n');
   let currentRepo = null;
+  let inQuerySection = false;
   for (const line of lines) {
     if (line.startsWith('## Query')) {
+      inQuerySection = true;
       continue;
     }
+    if (!inQuerySection) continue;
     const repoMatch = line.match(/^repo:\s*(.+)/i);
     if (repoMatch) {
       currentRepo = repoMatch[1].trim();
       continue;
     }
     const trimmed = line.trim();
-    if (trimmed && !trimmed.startsWith('#') && !trimmed.startsWith('These queries') && !trimmed.startsWith('Format:')) {
+    if (trimmed && !trimmed.startsWith('#')) {
       queries.push({ query: trimmed, repo: currentRepo });
       currentRepo = null;
     }
