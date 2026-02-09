@@ -90,7 +90,7 @@ function runCommand(cmd, args, { input, cwd, timeout = 18_000_000 } = {}) {
   });
 }
 
-async function runClaude(prompt, { timeout = 300_000 } = {}) {
+async function runClaude(prompt, { timeout = 18_000_000 } = {}) {
   const result = await runCommand('claude', [
     '-p',
     '--dangerously-skip-permissions',
@@ -113,7 +113,7 @@ async function generateStory(query, repo) {
   if (repo) args.push('--repo', repo);
   const result = await runCommand('node', args, {
     cwd: '/app',
-    timeout: 600_000,
+    timeout: 18_000_000,
   });
   return {
     exitCode: result.code,
@@ -326,7 +326,7 @@ Output the complete function, ready to paste into index.js:`;
 
 Do not change anything outside the buildPrompt function.`;
 
-  await runClaude(applyPrompt, { timeout: 120_000 });
+  await runClaude(applyPrompt, { timeout: 18_000_000 });
 
   // Verify the file is still valid
   try {
