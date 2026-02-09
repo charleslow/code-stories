@@ -16,9 +16,11 @@ import { spawn, execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
-const OPTIMIZATION_DIR = path.resolve('/app/optimization');
+const SCRIPT_DIR = path.dirname(new URL(import.meta.url).pathname);
+const CLI_DIR = path.resolve(SCRIPT_DIR, '..');
+const OPTIMIZATION_DIR = SCRIPT_DIR;
 const RESULTS_DIR = path.join(OPTIMIZATION_DIR, 'results');
-const CLI_ENTRY = '/app/index.js';
+const CLI_ENTRY = path.join(CLI_DIR, 'index.js');
 const MAX_ITERATIONS = parseInt(process.env.MAX_ITERATIONS || '5', 10);
 const QUERIES_TO_TEST = parseInt(process.env.QUERIES_TO_TEST || '2', 10);
 
@@ -57,7 +59,7 @@ function parseQueries(queriesMd) {
 function runCommand(cmd, args, { input, cwd, timeout = 1_800_000 } = {}) {
   return new Promise((resolve, reject) => {
     const proc = spawn(cmd, args, {
-      cwd: cwd || '/app',
+      cwd: cwd || CLI_DIR,
       env: { ...process.env },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -112,7 +114,7 @@ async function generateStory(query, repo) {
   const args = [CLI_ENTRY, query];
   if (repo) args.push('--repo', repo);
   const result = await runCommand('node', args, {
-    cwd: '/app',
+    cwd: CLI_DIR,
     timeout: 1_800_000,
   });
   return {
@@ -123,12 +125,12 @@ async function generateStory(query, repo) {
 }
 
 function getLatestStory() {
-  const manifestPath = '/app/stories/manifest.json';
+  const manifestPath = path.join(CLI_DIR, 'stories/manifest.json');
   if (!fs.existsSync(manifestPath)) return null;
   const manifest = JSON.parse(readFile(manifestPath));
   if (manifest.stories.length === 0) return null;
   const latest = manifest.stories[0];
-  const storyPath = `/app/stories/${latest.id}.json`;
+  const storyPath = path.join(CLI_DIR, `stories/${latest.id}.json`);
   if (!fs.existsSync(storyPath)) return null;
   return JSON.parse(readFile(storyPath));
 }
@@ -283,7 +285,7 @@ ${reflections}
 
 ${previousReflections ? `## Previous Iteration Reflections (for context)\n${previousReflections}\n` : ''}
 
-## Current buildPrompt Function (from /app/index.js)
+## Current buildPrompt Function (from ${CLI_ENTRY})
 \`\`\`javascript
 ${currentPrompt}
 \`\`\`
@@ -317,12 +319,12 @@ Output the complete function, ready to paste into index.js:`;
 
   const applyPrompt = `You have access to the filesystem. Your task:
 
-1. Read /app/index.js
-2. Read /app/optimization/results/iteration-${iteration}/improved_prompt.js which contains an improved buildPrompt function
-3. Replace the buildPrompt function in /app/index.js with the improved version from the file
+1. Read ${CLI_ENTRY}
+2. Read ${path.join(iterDir, 'improved_prompt.js')} which contains an improved buildPrompt function
+3. Replace the buildPrompt function in ${CLI_ENTRY} with the improved version from the file
 4. The function starts with "function buildPrompt(" and ends with the closing "}" of that function
 5. Make sure the replacement is syntactically valid JavaScript
-6. Write the updated file back to /app/index.js
+6. Write the updated file back to ${CLI_ENTRY}
 
 Do not change anything outside the buildPrompt function.`;
 
@@ -330,7 +332,7 @@ Do not change anything outside the buildPrompt function.`;
 
   // Verify the file is still valid
   try {
-    execSync('node --check /app/index.js', { encoding: 'utf-8' });
+    execSync(`node --check ${CLI_ENTRY}`, { encoding: 'utf-8' });
     console.log('  index.js syntax check passed');
   } catch (e) {
     console.error('  ERROR: index.js has syntax errors after modification, reverting...');

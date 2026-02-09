@@ -2,24 +2,21 @@
 
 Iteratively improves the `buildPrompt` function in `index.js` using Claude.
 
-## Build
+## Prerequisites
+
+- Node.js installed
+- Claude CLI installed and authenticated (`npm install -g @anthropic-ai/claude-code && claude login`)
+
+## Run
 
 ```bash
-docker build -t code-stories-optimize -f packages/cli/optimization/Dockerfile packages/cli
+./packages/cli/optimization/run.sh
 ```
 
-## Run (interactive)
+Or directly:
 
 ```bash
-mkdir -p results && chmod 777 results
-docker run -it --entrypoint /bin/bash -v $(pwd)/results:/app/optimization/results code-stories-optimize
-```
-
-Inside the container:
-
-```bash
-claude
-node optimization/optimize.mjs
+node packages/cli/optimization/optimize.mjs
 ```
 
 ## Environment Variables
@@ -28,5 +25,5 @@ node optimization/optimize.mjs
 - `QUERIES_TO_TEST` - Queries to test per iteration (default: 2)
 
 ```bash
-MAX_ITERATIONS=2 QUERIES_TO_TEST=1 node optimization/optimize.mjs
+MAX_ITERATIONS=2 QUERIES_TO_TEST=1 node packages/cli/optimization/optimize.mjs
 ```

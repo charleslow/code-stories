@@ -9,7 +9,7 @@ set -euo pipefail
 #   ./run.sh
 #
 # Prerequisites:
-#   - Docker installed
+#   - Node.js installed
 #   - Authenticated via `claude login` (uses your Max subscription)
 #
 # Configuration (via environment variables):
@@ -29,60 +29,43 @@ if [ -f "$SCRIPT_DIR/.env" ]; then
   set +a
 fi
 
-# Check for Claude CLI credentials
-CLAUDE_CONFIG_DIR="${HOME}/.claude"
-if [ ! -d "$CLAUDE_CONFIG_DIR" ]; then
-  echo "ERROR: No Claude CLI credentials found at $CLAUDE_CONFIG_DIR"
+# Check for Claude CLI
+if ! command -v claude &> /dev/null; then
+  echo "ERROR: Claude CLI not found."
   echo ""
-  echo "Please authenticate first by running:"
+  echo "Please install it first:"
+  echo "  npm install -g @anthropic-ai/claude-code"
+  echo ""
+  echo "Then authenticate:"
   echo "  claude login"
-  echo ""
-  echo "This will open your browser to sign in with your Claude Max subscription."
   exit 1
 fi
 
-IMAGE_NAME="code-stories-optimizer"
-CONTAINER_NAME="code-stories-opt-$(date +%s)"
-RESULTS_HOST_DIR="$SCRIPT_DIR/results"
+# Install CLI dependencies if needed
+if [ ! -d "$CLI_DIR/node_modules" ]; then
+  echo "Installing CLI dependencies..."
+  (cd "$CLI_DIR" && npm install)
+fi
 
 echo "=== Code Stories Prompt Optimization ==="
-echo ""
-echo "Auth: Using Claude CLI credentials from $CLAUDE_CONFIG_DIR"
-echo ""
-echo "Building Docker image..."
-docker build -t "$IMAGE_NAME" -f "$SCRIPT_DIR/Dockerfile" "$CLI_DIR"
-
 echo ""
 echo "Configuration:"
 echo "  MAX_ITERATIONS:  ${MAX_ITERATIONS:-5}"
 echo "  QUERIES_TO_TEST: ${QUERIES_TO_TEST:-2}"
-echo "  Results dir:     $RESULTS_HOST_DIR"
+echo "  Results dir:     $SCRIPT_DIR/results"
 echo ""
-
-# Create results dir on host for volume mount
-mkdir -p "$RESULTS_HOST_DIR"
-
 echo "Starting optimization loop..."
 echo ""
 
-docker run \
-  --name "$CONTAINER_NAME" \
-  --user "$(id -u):$(id -g)" \
-  -e HOME=/tmp/home \
-  -e MAX_ITERATIONS="${MAX_ITERATIONS:-5}" \
-  -e QUERIES_TO_TEST="${QUERIES_TO_TEST:-2}" \
-  -v "$CLAUDE_CONFIG_DIR:/tmp/home/.claude:ro" \
-  -v "$RESULTS_HOST_DIR:/app/optimization/results" \
-  "$IMAGE_NAME"
+MAX_ITERATIONS="${MAX_ITERATIONS:-5}" \
+QUERIES_TO_TEST="${QUERIES_TO_TEST:-2}" \
+node "$SCRIPT_DIR/optimize.mjs"
 
 echo ""
 echo "=== Done ==="
 echo ""
-echo "Results are in: $RESULTS_HOST_DIR/"
+echo "Results are in: $SCRIPT_DIR/results/"
 echo ""
 echo "To use the optimized prompt:"
-echo "  cp $RESULTS_HOST_DIR/iteration-<N>/index.js.snapshot packages/cli/index.js"
+echo "  cp $SCRIPT_DIR/results/iteration-<N>/index.js.snapshot packages/cli/index.js"
 echo ""
-
-# Cleanup container
-docker rm "$CONTAINER_NAME" >/dev/null 2>&1 || true
