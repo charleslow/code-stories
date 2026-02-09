@@ -15,7 +15,3 @@ What are the two forward passes that LLM-JEPA uses and how does it use masking a
 ## Query 3
 repo: arogozhnikov/einops
 How does einops seamlessly interoperate between numpy, pytorch, tensorflow and jax?
-
-## Query 4
-repo: lancedb/lancedb
-Explore the main dependencies of lancedb and explain the main contribution of lancedb above the dependencies.

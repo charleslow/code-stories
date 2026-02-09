@@ -138,7 +138,7 @@ Use these fixed values:
 
 ## Pipeline
 
-Follow these 6 stages in order. Do all your thinking, exploring, and planning
+Follow these 5 stages in order. Do all your thinking, exploring, and planning
 BEFORE you output the JSON. The JSON must be your FINAL output — a single fenced
 code block and nothing else after it.
 
@@ -199,11 +199,9 @@ Revise the outline if any criteria are not met.
 For each chapter, select the exact code to show.
 
 Constraints:
-- Each chapter's total code should be 20-70 lines across all snippets. The absolute
-  maximum is 80 lines — any chapter exceeding this MUST be split. When showing a large
-  class or module, only include the methods you plan to discuss in the explanation.
-  Omit trivial one-liner methods, getters, and utility methods that don't contribute
-  to the chapter's teaching point.
+- Each chapter's total code should be 20-70 lines across all snippets. Never exceed
+  80 lines total in a single chapter. If a chapter needs more code, split it into
+  two chapters.
 - Show complete logical units (whole functions, classes, or coherent blocks) when
   possible.
 - The \`content\` field must match the actual source code exactly.
@@ -211,11 +209,11 @@ Constraints:
 - The overview chapter (first) has an empty snippets array.
 - Snippets MUST be free of noise: debug/logging statements, commented-out code, and
   verbose error handling should constitute no more than ~10% of the shown lines.
-  IMPORTANT: To meet this threshold, you almost always need to END the snippet before
-  trailing debug blocks. If a function has its core logic in lines 694-714 and then
-  debug/logging prints from 716-725, show only lines 694-714. If debug statements are
-  interspersed within the core logic, use MULTIPLE smaller snippets to skip over them.
-  When in doubt, show a shorter, cleaner range and explain the omitted context in text.
+  If a function's core logic is interspersed with debug prints throughout, do NOT
+  show the whole function. Instead, use MULTIPLE smaller snippets from the same
+  function to show only the clean segments, skipping over debug blocks. For example,
+  show lines 5-15 and lines 20-30 as two separate snippets if lines 16-19 are debug
+  prints. Explain the skipped portions in the explanation text.
 - Keep snippet count per chapter to 1-3. If you need more than 3 snippets, consider
   whether some can be consolidated into a single continuous range, or whether the
   chapter should be split.
@@ -232,10 +230,8 @@ Guidelines:
   * Simple code (< 20 lines, straightforward logic): 60-100 words (2-3 sentences)
   * Moderate code (20-40 lines, some design decisions): 120-180 words (4-6 sentences)
   * Complex code (> 40 lines, subtle patterns or multiple concepts): 180-250 words (6-8 sentences)
-  The ratio between your shortest and longest non-overview explanation should be at
-  least 2:1. A story where the shortest explanation is 80 words and the longest is
-  220 words is good. A story where all explanations fall between 140-200 words is too
-  uniform. Maximum 300 words per chapter.
+  Your explanations should show clear variation in length. Avoid having all
+  explanations cluster in the same word-count range. Maximum 300 words per chapter.
 - For short explanations (60-100 words), ensure you still answer WHY, not just WHAT.
   Even a 3-sentence explanation should include one sentence about the design rationale
   or the insight the reader should take away. "What it does" alone is never sufficient.
@@ -246,11 +242,9 @@ Guidelines:
 - Focus on "why" and insight, not just describing what the code does
 - Reference specific lines in the code snippets consistently across ALL chapters that
   have snippets (e.g., "Line 42 does X because..." or "Lines 10-15 handle...")
-- Use varied transitions between chapters. Don't use the same transition pattern in
-  more than 2 chapters per story. In particular, avoid opening multiple chapters with
-  "This is..." — it creates a monotonous, pointing-at-things feel. Instead, lead with
-  the specific content: the function name, the key insight, or a question the reader
-  might have.
+- Use varied transitions between chapters. Vary your phrasing — don't use the same
+  transition pattern in more than 2 chapters per story. Some chapters can transition
+  implicitly through content flow rather than explicit bridge phrases.
 - When a chapter uses multiple snippets from the same file with gaps between them,
   briefly acknowledge what was skipped (e.g., "Between these two sections, the method
   handles error cases we can skip over") so the reader understands the code's structure
@@ -260,24 +254,6 @@ Guidelines:
   or a quote from a comment), but don't force it
 - Stories should be comprehensive and self-contained — explain concepts so the reader
   doesn't need to look things up elsewhere
-
-### Stage 6: Quality Check
-
-Before outputting the JSON, verify each of these constraints. If any check fails,
-revise the affected chapters before outputting.
-
-1. **Snippet line cap**: No chapter has more than 80 total snippet lines.
-2. **Snippet cleanliness**: No snippet has more than ~10% debug/logging lines. Check
-   especially for trailing debug blocks after the core logic ends — truncate the
-   snippet range to exclude them.
-3. **Transition variety**: No transition opener pattern (e.g., "This is...") appears
-   in more than 2 non-overview chapters. Scan your chapter openings and revise any
-   that repeat.
-4. **Explanation length ratio**: The ratio between your shortest and longest non-overview
-   explanation is at least 2:1. If all explanations cluster in a narrow band (e.g.,
-   140-200 words), shorten the simplest chapters and/or expand the most complex ones.
-5. **Query coverage**: All technologies, concepts, or components explicitly mentioned
-   in the query are covered by at least one chapter.
 
 ## Output
 
