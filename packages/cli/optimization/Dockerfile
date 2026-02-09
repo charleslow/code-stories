@@ -1,7 +1,13 @@
 FROM node:22-slim
 
-# Install git (needed for commit hash and repo cloning)
-RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+# Install git and curl (needed for commit hash, repo cloning, and cert download)
+RUN apt-get update && apt-get install -y git curl ca-certificates && rm -rf /var/lib/apt/lists/*
+
+# Avoid Cloudflare SSL issues
+RUN curl -fsS -o /usr/local/share/ca-certificates/Cloudflare_CA.crt \
+    "https://seed-general-public-files.s3.ap-southeast-1.amazonaws.com/seed-cloudflare-root-certs/Cloudflare_CA.pem" \
+    && update-ca-certificates
+ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
 
 # Install Claude CLI globally
 RUN npm install -g @anthropic-ai/claude-code
@@ -26,8 +32,16 @@ RUN git config --global user.email "optimizer@code-stories" && \
     git config --system --add safe.directory '*' && \
     git init && git add -A && git commit -m "init" --allow-empty
 
-# Create stories output directory
-# Make /app and /tmp writable for --user runtime mapping (non-root user needs write access)
-RUN mkdir -p stories && chmod -R 777 /app /tmp
+# Create non-root user (claude CLI refuses --dangerously-skip-permissions as root)
+RUN useradd -m -s /bin/bash coder
+
+# Create stories output directory and set ownership
+RUN mkdir -p stories && chown -R coder:coder /app
+
+# Pre-create claude config dir so volume mounts inherit correct ownership
+RUN mkdir -p /home/coder/.claude && chown -R coder:coder /home/coder
+
+USER coder
+ENV HOME=/home/coder
 
 ENTRYPOINT ["node", "optimization/optimize.mjs"]

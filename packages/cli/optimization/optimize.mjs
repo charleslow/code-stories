@@ -54,7 +54,7 @@ function parseQueries(queriesMd) {
   return queries;
 }
 
-function runCommand(cmd, args, { input, cwd, timeout = 600_000 } = {}) {
+function runCommand(cmd, args, { input, cwd, timeout = 18_000_000 } = {}) {
   return new Promise((resolve, reject) => {
     const proc = spawn(cmd, args, {
       cwd: cwd || '/app',

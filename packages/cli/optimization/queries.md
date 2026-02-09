@@ -9,13 +9,13 @@ repo: fastapi/fastapi
 Expound on the design principle of fastapi that makes it easy for developers to use.
 
 ## Query 2
-repo: huggingface/transformers
-Where are the different implementations of flash attention and when do we use each one?
-
-## Query 3
 repo: galilai-group/llm-jepa
 What are the two forward passes that LLM-JEPA uses and how does it use masking and tied-weights prediction to achieve the goals?
 
-## Query 4
+## Query 3
 repo: bentoml/BentoML
 I am not familiar with deploying production ML systems. What makes bentoml useful for ML engineers and which parts of the codebase shed light on their design?
+
+## Query 4
+repo: arogozhnikov/einops
+How does einops seamlessly interoperate between numpy, pytorch, tensorflow and jax?
