@@ -25,6 +25,11 @@ dist-ssr
 
 # Generated stories
 stories/
-stories/*
 results/
-results/*
+
+# Claude CLI
+.claude/
+
+# Environment variables
+.env
+.env.*

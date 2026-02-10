@@ -10,6 +10,7 @@ import {
 import { LandingPage } from './LandingPage';
 import { StoryViewer } from './StoryViewer';
 import { LoadingView } from './LoadingView';
+import { ErrorBoundary } from './ErrorBoundary';
 
 export function App() {
   const [appState, setAppState] = useState<AppState>('home');
@@ -102,7 +103,9 @@ export function App() {
         </div>
       )}
       {appState === 'reading' && currentStory && (
-        <StoryViewer story={currentStory} onBack={handleBack} />
+        <ErrorBoundary>
+          <StoryViewer story={currentStory} onBack={handleBack} />
+        </ErrorBoundary>
       )}
     </div>
   );
