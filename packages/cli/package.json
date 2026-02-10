@@ -1,10 +1,10 @@
 {
   "name": "code-stories",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Generate narrative-driven code stories using Claude",
   "type": "module",
   "bin": {
-    "code-stories": "./index.js"
+    "code-stories": "index.js"
   },
   "scripts": {
     "start": "node index.js"
