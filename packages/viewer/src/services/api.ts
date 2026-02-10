@@ -2,11 +2,78 @@
 
 import type { Story, StoryManifest } from '../types';
 
+function fetchWithTimeout(url: string, timeoutMs = 30_000): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { signal: controller.signal }).then(
+    (res) => { clearTimeout(timer); return res; },
+    (err) => {
+      clearTimeout(timer);
+      if (err.name === 'AbortError') {
+        throw new Error('Request timed out after 30 seconds');
+      }
+      throw err;
+    }
+  );
+}
+
+function validateStory(data: unknown): Story {
+  if (!data || typeof data !== 'object') {
+    throw new Error('Invalid story: expected a JSON object');
+  }
+  const obj = data as Record<string, unknown>;
+  if (typeof obj.id !== 'string') throw new Error("Invalid story: missing 'id' field");
+  if (typeof obj.title !== 'string') throw new Error("Invalid story: missing 'title' field");
+  if (!Array.isArray(obj.chapters)) throw new Error("Invalid story: missing 'chapters' array");
+
+  for (let i = 0; i < obj.chapters.length; i++) {
+    const ch = obj.chapters[i] as Record<string, unknown>;
+    if (typeof ch.id !== 'string') throw new Error(`Invalid story: chapter ${i} missing 'id'`);
+    if (typeof ch.label !== 'string') throw new Error(`Invalid story: chapter ${i} missing 'label'`);
+    if (typeof ch.explanation !== 'string') throw new Error(`Invalid story: chapter ${i} missing 'explanation'`);
+    if (!Array.isArray(ch.snippets)) throw new Error(`Invalid story: chapter ${i} missing 'snippets' array`);
+
+    for (let j = 0; j < (ch.snippets as unknown[]).length; j++) {
+      const sn = (ch.snippets as Record<string, unknown>[])[j];
+      if (typeof sn.filePath !== 'string') throw new Error(`Invalid story: chapter ${i} snippet ${j} missing 'filePath'`);
+      if (typeof sn.startLine !== 'number') throw new Error(`Invalid story: chapter ${i} snippet ${j} missing 'startLine'`);
+      if (typeof sn.endLine !== 'number') throw new Error(`Invalid story: chapter ${i} snippet ${j} missing 'endLine'`);
+      if (typeof sn.content !== 'string') throw new Error(`Invalid story: chapter ${i} snippet ${j} missing 'content'`);
+    }
+  }
+
+  return data as Story;
+}
+
+function validateManifest(data: unknown): StoryManifest {
+  if (!data || typeof data !== 'object') {
+    throw new Error('Invalid manifest: expected a JSON object');
+  }
+  const obj = data as Record<string, unknown>;
+  if (!Array.isArray(obj.stories)) throw new Error("Invalid manifest: missing 'stories' array");
+  return data as StoryManifest;
+}
+
+/**
+ * Parse a repo param into { user, repo, branch }.
+ * Supports "user/repo" (branch defaults to param or "main")
+ * and "user/repo/branch" shorthand.
+ */
+function parseRepoBranch(repoParam: string, branchParam: string | null): { owner: string; repo: string; branch: string } {
+  const parts = repoParam.split('/');
+  if (parts.length >= 3) {
+    return { owner: parts[0], repo: parts[1], branch: parts.slice(2).join('/') };
+  }
+  return { owner: parts[0], repo: parts[1], branch: branchParam || 'main' };
+}
+
 /**
  * Parse URL parameters to determine story source
  * Supports:
  * - ?url=<direct-url-to-json>
  * - ?repo=user/repo&story=story-id (GitHub shorthand)
+ * - ?repo=user/repo/branch&story=story-id (branch in repo path)
+ * - ?repo=user/repo&branch=master&story=story-id (explicit branch param)
  */
 export function getStoryUrlFromParams(params: URLSearchParams): string | null {
   const directUrl = params.get('url');
@@ -15,7 +82,8 @@ export function getStoryUrlFromParams(params: URLSearchParams): string | null {
   const repo = params.get('repo');
   const story = params.get('story');
   if (repo && story) {
-    return `https://raw.githubusercontent.com/${repo}/main/stories/${story}.json`;
+    const { owner, repo: repoName, branch } = parseRepoBranch(repo, params.get('branch'));
+    return `https://raw.githubusercontent.com/${owner}/${repoName}/${branch}/stories/${story}.json`;
   }
 
   return null;
@@ -26,6 +94,8 @@ export function getStoryUrlFromParams(params: URLSearchParams): string | null {
  * Supports:
  * - ?manifest=<direct-url-to-manifest>
  * - ?repo=user/repo (GitHub shorthand - loads manifest)
+ * - ?repo=user/repo/branch (branch in repo path)
+ * - ?repo=user/repo&branch=master (explicit branch param)
  */
 export function getManifestUrlFromParams(params: URLSearchParams): string | null {
   const manifestUrl = params.get('manifest');
@@ -33,7 +103,8 @@ export function getManifestUrlFromParams(params: URLSearchParams): string | null
 
   const repo = params.get('repo');
   if (repo && !params.get('story')) {
-    return `https://raw.githubusercontent.com/${repo}/main/stories/manifest.json`;
+    const { owner, repo: repoName, branch } = parseRepoBranch(repo, params.get('branch'));
+    return `https://raw.githubusercontent.com/${owner}/${repoName}/${branch}/stories/manifest.json`;
   }
 
   return null;
@@ -43,22 +114,32 @@ export function getManifestUrlFromParams(params: URLSearchParams): string | null
  * Fetch a story from a URL
  */
 export async function fetchStory(url: string): Promise<Story> {
-  const response = await fetch(url);
+  const response = await fetchWithTimeout(url);
   if (!response.ok) {
-    throw new Error(`Failed to fetch story: ${response.status} ${response.statusText}`);
+    const isDefaultBranch = url.includes('/main/stories/');
+    const hint = isDefaultBranch
+      ? ' If this repository uses a different default branch, try adding ?branch=master'
+      : '';
+    throw new Error(`Failed to fetch story: ${response.status} ${response.statusText}.${hint}`);
   }
-  return response.json();
+  const data = await response.json();
+  return validateStory(data);
 }
 
 /**
  * Fetch a manifest from a URL
  */
 export async function fetchManifest(url: string): Promise<StoryManifest> {
-  const response = await fetch(url);
+  const response = await fetchWithTimeout(url);
   if (!response.ok) {
-    throw new Error(`Failed to fetch manifest: ${response.status} ${response.statusText}`);
+    const isDefaultBranch = url.includes('/main/stories/');
+    const hint = isDefaultBranch
+      ? ' If this repository uses a different default branch, try adding ?branch=master'
+      : '';
+    throw new Error(`Failed to fetch manifest: ${response.status} ${response.statusText}.${hint}`);
   }
-  return response.json();
+  const data = await response.json();
+  return validateManifest(data);
 }
 
 // Local storage helpers for recent stories

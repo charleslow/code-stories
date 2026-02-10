@@ -1,6 +1,20 @@
 import { Highlight, themes } from 'prism-react-renderer';
 import type { CodeSnippet } from '../types';
 
+const EXT_TO_LANGUAGE: Record<string, string> = {
+  '.py': 'python', '.js': 'javascript', '.ts': 'typescript', '.tsx': 'typescript',
+  '.jsx': 'jsx', '.rs': 'rust', '.go': 'go', '.java': 'java',
+  '.cpp': 'cpp', '.cc': 'cpp', '.h': 'cpp', '.c': 'c',
+  '.rb': 'ruby', '.sh': 'bash', '.css': 'css', '.html': 'markup',
+  '.json': 'json', '.yaml': 'yaml', '.yml': 'yaml', '.md': 'markdown', '.sql': 'sql',
+};
+
+function getLanguageFromPath(filePath: string): string {
+  const dot = filePath.lastIndexOf('.');
+  if (dot === -1) return 'typescript';
+  return EXT_TO_LANGUAGE[filePath.slice(dot)] ?? 'typescript';
+}
+
 interface CodePanelProps {
   snippets: CodeSnippet[];
   style?: React.CSSProperties;
@@ -28,7 +42,7 @@ export function CodePanel({ snippets, style }: CodePanelProps) {
           <Highlight
             theme={themes.oneDark}
             code={snippet.content}
-            language="python"
+            language={getLanguageFromPath(snippet.filePath)}
           >
             {({ className, style, tokens, getLineProps, getTokenProps }) => (
               <pre className={className} style={style}>

@@ -2,20 +2,32 @@
 
 import { program } from 'commander';
 import ora from 'ora';
-import { spawn, execSync } from 'child_process';
+import { spawn, execSync, execFileSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { v4 as uuidv4 } from 'uuid';
+import { buildPrompt } from './prompt.js';
 
-// Configuration (use absolute paths so they work regardless of cwd)
+// Configuration (resolved relative to cwd)
 const STORIES_DIR = path.resolve('./stories');
 const TMP_DIR = path.join(STORIES_DIR, '.tmp');
+const MARKER_FILE = path.join(STORIES_DIR, '.code-stories');
 
 // Ensure directories exist
 function ensureDirectories() {
-  if (!fs.existsSync(STORIES_DIR)) {
+  if (fs.existsSync(STORIES_DIR)) {
+    // Warn if directory exists but wasn't created by code-stories
+    const entries = fs.readdirSync(STORIES_DIR);
+    if (entries.length > 0 && !fs.existsSync(MARKER_FILE)) {
+      console.warn('Warning: stories/ directory exists but was not created by code-stories. Proceeding may overwrite existing files.');
+    }
+  } else {
     fs.mkdirSync(STORIES_DIR, { recursive: true });
+  }
+  // Create marker file
+  if (!fs.existsSync(MARKER_FILE)) {
+    fs.writeFileSync(MARKER_FILE, '');
   }
   if (!fs.existsSync(TMP_DIR)) {
     fs.mkdirSync(TMP_DIR, { recursive: true });
@@ -26,7 +38,8 @@ function ensureDirectories() {
 function getCommitHash(cwd = process.cwd()) {
   try {
     return execSync('git rev-parse HEAD', { cwd, encoding: 'utf-8' }).trim();
-  } catch {
+  } catch (e) {
+    console.warn('Failed to get commit hash:', e.message);
     return 'unknown';
   }
 }
@@ -47,10 +60,18 @@ function cloneRepo(repo, spinner) {
   const tempDir = path.join(os.tmpdir(), `code-stories-${uuidv4()}`);
 
   spinner.text = `Cloning ${repoId}...`;
-  execSync(`git clone --depth 1 "${cloneUrl}" "${tempDir}"`, {
-    encoding: 'utf-8',
-    stdio: 'pipe',
-  });
+  try {
+    execFileSync('git', ['clone', '--depth', '1', cloneUrl, tempDir], {
+      encoding: 'utf-8',
+      stdio: 'pipe',
+      timeout: 60_000,
+    });
+  } catch (e) {
+    if (e.killed) {
+      throw new Error('Git clone timed out after 60 seconds. The repository may be too large or the network is slow.');
+    }
+    throw e;
+  }
 
   return { tempDir, repoId };
 }
@@ -59,8 +80,8 @@ function cloneRepo(repo, spinner) {
 function cleanupClone(tempDir) {
   try {
     fs.rmSync(tempDir, { recursive: true, force: true });
-  } catch {
-    // Ignore cleanup errors
+  } catch (e) {
+    console.warn('Failed to clean up cloned repo:', e.message);
   }
 }
 
@@ -92,200 +113,6 @@ function getCurrentStage(generationDir) {
   }
 
   return stage;
-}
-
-// Build the prompt for Claude
-function buildPrompt(query, generationDir, commitHash, generationId, repoId) {
-  const jsonSchema = `{
-  "id": "string (UUID)",
-  "title": "string",
-  "query": "string",
-  "repo": "string or null (GitHub user/repo if from remote)",
-  "commitHash": "string",
-  "createdAt": "string (ISO 8601)",
-  "chapters": [
-    {
-      "id": "string (e.g., chapter-0)",
-      "label": "string (2-4 words for sidebar)",
-      "snippets": [
-        {
-          "filePath": "string (relative path)",
-          "startLine": "number (1-indexed)",
-          "endLine": "number (1-indexed)",
-          "content": "string (actual code)"
-        }
-      ],
-      "explanation": "string (markdown)"
-    }
-  ]
-}`;
-
-  return `You are an expert code narrator. Your job is to create a "code story" — a guided,
-chapter-by-chapter tour of a codebase that reads like a friendly colleague walking
-someone through the code. The aim is not just to communicate information, but insights.
-
-The user's query is: "${query}"
-
-You will produce a single JSON object matching this schema:
-${jsonSchema}
-
-Use these fixed values:
-- id: "${generationId}"
-- commitHash: "${commitHash}"
-- repo: ${repoId ? `"${repoId}"` : "null"}
-- createdAt: current ISO 8601 timestamp
-- query: "${query}"
-
-## Pipeline
-
-Follow these 6 stages in order. Do all your thinking, exploring, and planning
-BEFORE you output the JSON. The JSON must be your FINAL output — a single fenced
-code block and nothing else after it.
-
-### Stage 1: Explore the Codebase
-
-Read the files relevant to the query. Understand the architecture, key abstractions,
-and how components relate. Take notes on:
-- Entry points and control flow
-- Core data structures and algorithms
-- Design patterns and architectural decisions
-- Interesting "why" decisions (not just "what")
-
-### Stage 2: Plan the Outline
-
-Design 5-30 chapters (depending on complexity). Each chapter should have ONE clear
-teaching point — a single insight the reader takes away.
-
-Guidelines:
-- Start with an overview chapter (no code snippets) that orients the reader
-- Build from foundations to synthesis: show building blocks before compositions
-- End with a code-bearing chapter that serves as a natural conclusion — do NOT add
-  a separate prose-only summary/philosophy chapter
-- Chapter labels should be 2-4 words (for the sidebar)
-- If the story naturally divides into distinct phases or subsystems (e.g., a basic
-  mechanism and then an advanced variant), introduce the transition between phases
-  explicitly. Include a brief bridge in the preceding chapter's explanation that
-  states WHY the story is moving to the next phase and what problem the new phase
-  addresses.
-- If the relevant code spans multiple files, ensure the story visits at least 2-3
-  different files to convey the codebase structure. If the code is concentrated in
-  a single file, acknowledge this early and organize chapters around logical sections.
-- Before using a technical term for the first time, ensure it has been introduced or
-  defined. If the query uses specialized terminology, the overview chapter should
-  briefly explain these terms.
-
-### Stage 3: Review the Outline
-
-Before proceeding, evaluate your outline against these criteria:
-1. Does each chapter have exactly one clear teaching point?
-2. Are technical terms introduced before they're used?
-3. Is the progression logical — could a newcomer follow along?
-4. Are there any redundant chapters that could be merged?
-5. Does the story cover initialization, execution, and key mechanisms?
-6. Is the final chapter code-bearing (not a prose-only summary)?
-7. Does the story have a natural narrative arc (beginning, middle, end)?
-8. Are transitions between chapters smooth?
-9. Do any chapters need to show code regions with significant debug/logging code?
-   If so, plan alternative line ranges or consider splitting the chapter.
-10. **Query coverage**: Re-read the original query. Does the outline address every
-    specific technology, concept, or component mentioned? If the query asks about
-    "numpy, pytorch, tensorflow and jax", verify that all four are covered. If any
-    are missing, add chapters or expand existing ones.
-
-Revise the outline if any criteria are not met.
-
-### Stage 4: Identify Snippets
-
-For each chapter, select the exact code to show.
-
-Constraints:
-- Each chapter's total code should be 20-70 lines across all snippets. The absolute
-  maximum is 80 lines — any chapter exceeding this MUST be split. When showing a large
-  class or module, only include the methods you plan to discuss in the explanation.
-  Omit trivial one-liner methods, getters, and utility methods that don't contribute
-  to the chapter's teaching point.
-- Show complete logical units (whole functions, classes, or coherent blocks) when
-  possible.
-- The \`content\` field must match the actual source code exactly.
-- \`startLine\` and \`endLine\` must be accurate.
-- The overview chapter (first) has an empty snippets array.
-- Snippets MUST be free of noise: debug/logging statements, commented-out code, and
-  verbose error handling should constitute no more than ~10% of the shown lines.
-  IMPORTANT: To meet this threshold, you almost always need to END the snippet before
-  trailing debug blocks. If a function has its core logic in lines 694-714 and then
-  debug/logging prints from 716-725, show only lines 694-714. If debug statements are
-  interspersed within the core logic, use MULTIPLE smaller snippets to skip over them.
-  When in doubt, show a shorter, cleaner range and explain the omitted context in text.
-- Keep snippet count per chapter to 1-3. If you need more than 3 snippets, consider
-  whether some can be consolidated into a single continuous range, or whether the
-  chapter should be split.
-- Each snippet should be at least 3 lines. If you want to highlight a single line,
-  quote it in the explanation text (e.g., "The key line is \`total_loss = ...\`")
-  rather than creating a 1-line snippet.
-
-### Stage 5: Craft Explanations
-
-Write the explanation for each chapter in markdown.
-
-Guidelines:
-- Explanation length MUST vary based on the chapter's complexity:
-  * Simple code (< 20 lines, straightforward logic): 60-100 words (2-3 sentences)
-  * Moderate code (20-40 lines, some design decisions): 120-180 words (4-6 sentences)
-  * Complex code (> 40 lines, subtle patterns or multiple concepts): 180-250 words (6-8 sentences)
-  The ratio between your shortest and longest non-overview explanation should be at
-  least 2:1. A story where the shortest explanation is 80 words and the longest is
-  220 words is good. A story where all explanations fall between 140-200 words is too
-  uniform. Maximum 300 words per chapter.
-- For short explanations (60-100 words), ensure you still answer WHY, not just WHAT.
-  Even a 3-sentence explanation should include one sentence about the design rationale
-  or the insight the reader should take away. "What it does" alone is never sufficient.
-- The overview chapter (first) has an empty snippets array, just explanation. Keep it
-  to 150-200 words. Define key terms concisely (one sentence each, not full paragraphs).
-  The overview should orient the reader, not teach — the teaching happens in subsequent
-  chapters.
-- Focus on "why" and insight, not just describing what the code does
-- Reference specific lines in the code snippets consistently across ALL chapters that
-  have snippets (e.g., "Line 42 does X because..." or "Lines 10-15 handle...")
-- Use varied transitions between chapters. Don't use the same transition pattern in
-  more than 2 chapters per story. In particular, avoid opening multiple chapters with
-  "This is..." — it creates a monotonous, pointing-at-things feel. Instead, lead with
-  the specific content: the function name, the key insight, or a question the reader
-  might have.
-- When a chapter uses multiple snippets from the same file with gaps between them,
-  briefly acknowledge what was skipped (e.g., "Between these two sections, the method
-  handles error cases we can skip over") so the reader understands the code's structure
-  without seeing every line.
-- Tone: friendly, insightful colleague — not a textbook, not a standup routine
-- Inject some liveliness where appropriate (noting a clever trick, a surprising choice,
-  or a quote from a comment), but don't force it
-- Stories should be comprehensive and self-contained — explain concepts so the reader
-  doesn't need to look things up elsewhere
-
-### Stage 6: Quality Check
-
-Before outputting the JSON, verify each of these constraints. If any check fails,
-revise the affected chapters before outputting.
-
-1. **Snippet line cap**: No chapter has more than 80 total snippet lines.
-2. **Snippet cleanliness**: No snippet has more than ~10% debug/logging lines. Check
-   especially for trailing debug blocks after the core logic ends — truncate the
-   snippet range to exclude them.
-3. **Transition variety**: No transition opener pattern (e.g., "This is...") appears
-   in more than 2 non-overview chapters. Scan your chapter openings and revise any
-   that repeat.
-4. **Explanation length ratio**: The ratio between your shortest and longest non-overview
-   explanation is at least 2:1. If all explanations cluster in a narrow band (e.g.,
-   140-200 words), shorten the simplest chapters and/or expand the most complex ones.
-5. **Query coverage**: All technologies, concepts, or components explicitly mentioned
-   in the query are covered by at least one chapter.
-
-## Output
-
-Write your planning and thinking as normal text. Then output the final JSON as a
-single fenced code block (\`\`\`json ... \`\`\`). The JSON must be valid and match
-the schema exactly.
-
-Write the JSON to: ${generationDir}/story.json`;
 }
 
 // Generate a story
@@ -331,7 +158,6 @@ async function generateStory(query, options = {}) {
     const allowedTools = 'Read,Grep,Glob,Write';
     const claude = spawn('claude', [
       '-p',
-      '--dangerously-skip-permissions',
       '--allowedTools', allowedTools,
       '--add-dir', generationDir,
     ], {
@@ -362,6 +188,12 @@ async function generateStory(query, options = {}) {
       if (fs.existsSync(storyPath)) {
         try {
           const story = JSON.parse(fs.readFileSync(storyPath, 'utf-8'));
+
+          // Validate story.id is a proper UUID
+          const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          if (!story.id || !uuidRegex.test(story.id)) {
+            throw new Error(`Invalid story ID: "${story.id}" is not a valid UUID. Expected format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`);
+          }
 
           // Copy to stories directory
           const finalPath = path.join(STORIES_DIR, `${story.id}.json`);
