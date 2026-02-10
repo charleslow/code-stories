@@ -205,13 +205,15 @@ revise the affected chapters before outputting.
    snippet range to exclude them.
 3. **Snippet Coherence**: All snippets are coherent as far as possible, or provide
    sufficient context to understand their place in the codebase.
+4. **Overview chapter has no snippets**: The first chapter (chapter-0) must have an
+   empty snippets array. If it contains any snippets, move them to a later chapter.
 5. **Transition variety**: No transition opener pattern (e.g., "This is...") appears
    in more than 2 non-overview chapters. Scan your chapter openings and revise any
    that repeat.
-5. **Explanation length ratio**: The ratio between your shortest and longest non-overview
+6. **Explanation length ratio**: The ratio between your shortest and longest non-overview
    explanation is at least 2:1. If all explanations cluster in a narrow band (e.g.,
    140-200 words), shorten the simplest chapters and/or expand the most complex ones.
-6. **Query coverage**: All technologies, concepts, or components explicitly mentioned
+7. **Query coverage**: All technologies, concepts, or components explicitly mentioned
    in the query are covered by at least one chapter.
 
 ## Output

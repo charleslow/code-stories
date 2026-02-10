@@ -18,13 +18,27 @@ function getLanguageFromPath(filePath: string): string {
 interface CodePanelProps {
   snippets: CodeSnippet[];
   style?: React.CSSProperties;
+  storyQuery?: string;
+  storyRepo?: string | null;
 }
 
-export function CodePanel({ snippets, style }: CodePanelProps) {
+export function CodePanel({ snippets, style, storyQuery, storyRepo }: CodePanelProps) {
   if (snippets.length === 0) {
+    const hasMetadata = storyQuery || storyRepo;
     return (
       <div className="code-panel empty" style={style}>
-        <p className="no-code">This chapter contains no code snippets.</p>
+        {hasMetadata ? (
+          <div className="story-metadata">
+            <div className="metadata-label">Repository</div>
+            <div className="metadata-value metadata-repo">
+              {storyRepo || 'Local repository'}
+            </div>
+            <div className="metadata-label">Query</div>
+            <div className="metadata-value metadata-query">{storyQuery}</div>
+          </div>
+        ) : (
+          <p className="no-code">This chapter contains no code snippets.</p>
+        )}
       </div>
     );
   }

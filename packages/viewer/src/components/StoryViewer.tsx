@@ -68,6 +68,8 @@ export function StoryViewer({ story, onBack }: StoryViewerProps) {
             totalChapters={story.chapters.length}
             onPrev={goToPrev}
             onNext={goToNext}
+            storyQuery={story.query}
+            storyRepo={story.repo}
           />
         </main>
       </div>
