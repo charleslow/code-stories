@@ -87,11 +87,14 @@ function cleanupClone(tempDir) {
 
 // Stage definitions for progress tracking
 const STAGES = [
-  { file: 'exploration_notes.md', checkpoint: 'STAGE_1_COMPLETE', label: 'Exploring codebase' },
-  { file: 'narrative_outline.md', checkpoint: 'STAGE_2_COMPLETE', label: 'Creating narrative outline' },
-  { file: 'narrative_outline.md', checkpoint: 'STAGE_3_COMPLETE', label: 'Reviewing flow' },
-  { file: 'snippets_mapping.md', checkpoint: 'STAGE_4_COMPLETE', label: 'Identifying code snippets' },
-  { file: 'story.json', checkpoint: null, label: 'Crafting explanations' },
+  { file: 'exploration_scan.md', checkpoint: 'EXPLORATION_SCANNED', label: 'Scanning file tree' },
+  { file: 'exploration_read.md', checkpoint: 'EXPLORATION_READ', label: 'Reading key files' },
+  { file: 'exploration_notes.md', checkpoint: 'STAGE_1_COMPLETE', label: 'Documenting architecture' },
+  { file: 'narrative_outline.md', checkpoint: 'STAGE_2_COMPLETE', label: 'Planning outline' },
+  { file: 'narrative_outline_reviewed.md', checkpoint: 'STAGE_3_COMPLETE', label: 'Reviewing outline' },
+  { file: 'snippets_mapping.md', checkpoint: 'STAGE_4_COMPLETE', label: 'Identifying snippets' },
+  { file: 'explanations_draft.md', checkpoint: 'STAGE_5_COMPLETE', label: 'Crafting explanations' },
+  { file: 'story.json', checkpoint: null, label: 'Finalizing story' },
 ];
 
 // Check current stage based on files
