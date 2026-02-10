@@ -1,0 +1,241 @@
+{
+  "id": "6518e6ff-6b36-4f25-bc7a-3327d20552e8",
+  "title": "One API, Many Frameworks: How Einops Achieves Framework Independence",
+  "query": "How does einops work across multiple frameworks like pytorch, jax, tensorflow?",
+  "repo": "arogozhnikov/einops",
+  "commitHash": "5320936e9d137f28a7829ffa6cf9139ba7e91bd5",
+  "createdAt": "2026-02-10T12:00:00.000Z",
+  "chapters": [
+    {
+      "id": "chapter-0",
+      "label": "One API, Many Frameworks",
+      "snippets": [],
+      "explanation": "Einops provides a single, expressive notation for tensor operations — rearrange, reduce, repeat — that works identically across PyTorch, JAX, TensorFlow, NumPy, and a half-dozen other frameworks. Write `rearrange(x, 'b c h w -> b (c h w)')` once, and it works whether `x` is a `torch.Tensor`, a `jax.Array`, or a `tf.Tensor`.\n\nHow? By separating *what* to compute from *how* to compute it. The library has three distinct layers: a **pattern parser** that turns human-readable strings into structured transformation plans (called **recipes**), a **backend abstraction** that maps generic operations like \"reshape\" and \"transpose\" to each framework's specific API, and a set of **layer mixins** that integrate einops into each framework's neural network module system.\n\nA few key terms for the journey ahead: a **pattern** is the string like `'b c h w -> b (c h w)'` that describes the transformation. A **recipe** is the compiled execution plan derived from a pattern. A **backend** is the adapter that translates recipe steps into framework-specific calls."
+    },
+    {
+      "id": "chapter-1",
+      "label": "Everything Is Reduce",
+      "snippets": [
+        {
+          "filePath": "einops/__init__.py",
+          "startLine": 1,
+          "endLine": 17,
+          "content": "# imports can use EinopsError class\n# ruff: noqa: E402\n\n__author__ = \"Alex Rogozhnikov\"\n__version__ = \"0.9.0dev\"\n\n\nclass EinopsError(RuntimeError):\n    \"\"\"Runtime error thrown by einops\"\"\"\n\n    pass  # noqa: PIE790\n\n\n__all__ = [\"EinopsError\", \"asnumpy\", \"einsum\", \"pack\", \"parse_shape\", \"rearrange\", \"reduce\", \"repeat\", \"unpack\"]\n\nfrom .einops import asnumpy, einsum, parse_shape, rearrange, reduce, repeat\nfrom .packing import pack, unpack"
+        }
+      ],
+      "explanation": "The public API starts here in `__init__.py`. Line 14 declares the full set of exports: `rearrange`, `reduce`, `repeat`, `einsum`, `pack`, `unpack`, and a few helpers. Lines 16–17 show where they come from — `einops.py` and `packing.py`.\n\nWhat's not visible in this file is a surprising design choice: `rearrange` and `repeat` are both thin wrappers that call `reduce()` internally. The key lines (in `einops.py`) are `return reduce(tensor, pattern, reduction=\"rearrange\", **axes_lengths)` for rearrange and `return reduce(tensor, pattern, reduction=\"repeat\", **axes_lengths)` for repeat. Everything funnels through one function, varying only the reduction type. This \"everything is reduce\" pattern consolidates all logic into a single pipeline, reducing code duplication and centralizing error handling."
+    },
+    {
+      "id": "chapter-2",
+      "label": "The Entry Point",
+      "snippets": [
+        {
+          "filePath": "einops/einops.py",
+          "startLine": 528,
+          "endLine": 542,
+          "content": "    try:\n        if isinstance(tensor, list):\n            if len(tensor) == 0:\n                raise TypeError(\"Rearrange/Reduce/Repeat can't be applied to an empty list\")\n            backend = get_backend(tensor[0])\n            tensor = backend.stack_on_zeroth_dimension(tensor)\n        else:\n            backend = get_backend(tensor)\n\n        hashable_axes_lengths = tuple(axes_lengths.items())\n        shape = backend.shape(tensor)\n        recipe = _prepare_transformation_recipe(pattern, reduction, axes_names=tuple(axes_lengths), ndim=len(shape))\n        return _apply_recipe(\n            backend, recipe, cast(Tensor, tensor), reduction_type=reduction, axes_lengths=hashable_axes_lengths\n        )"
+        }
+      ],
+      "explanation": "Here is the core of `reduce()`, where all three operations converge. The logic follows a clean three-step pipeline.\n\nFirst, lines 529–535 detect the framework: if the input is a list of tensors, it grabs the backend from the first element and stacks them; otherwise it calls `get_backend(tensor)`. This single call is how einops figures out whether it's dealing with PyTorch, TensorFlow, or anything else.\n\nSecond, line 539 calls `_prepare_transformation_recipe()` — a cached function that parses the pattern string and compiles it into a `TransformRecipe`. Notice this is keyed by `(pattern, reduction, axes_names, ndim)`, so repeated calls with the same pattern are essentially free.\n\nThird, lines 540–542 call `_apply_recipe()`, passing the backend, recipe, and tensor. The backend handles all framework-specific work, while the recipe contains the framework-agnostic transformation logic. This separation is the heart of einops' portability."
+    },
+    {
+      "id": "chapter-3",
+      "label": "Detecting the Framework",
+      "snippets": [
+        {
+          "filePath": "einops/_backends.py",
+          "startLine": 22,
+          "endLine": 62,
+          "content": "def get_backend(tensor) -> \"AbstractBackend\":\n    \"\"\"\n    Takes a correct backend (e.g. numpy backend if tensor is numpy.ndarray) for a tensor.\n    If needed, imports package and creates backend\n    \"\"\"\n    _type = type(tensor)\n    _result = _type2backend.get(_type, None)\n    if _result is not None:\n        return _result\n\n    previously_loaded_backends = list(_loaded_backends.items())\n    for _framework_name, backend in previously_loaded_backends:\n        if backend.is_appropriate_type(tensor):\n            _type2backend[_type] = backend\n            return backend\n\n    # Find backend subclasses recursively\n    backend_subclasses = []\n    backends = AbstractBackend.__subclasses__()\n    while backends:\n        backend = backends.pop()\n        backends += backend.__subclasses__()\n        backend_subclasses.append(backend)\n\n    # handles modification of _loaded_backends from other thread, see #391\n    prev_backend_names = [x for x, _ in previously_loaded_backends]\n    for BackendSubclass in backend_subclasses:\n        if _debug_importing:\n            print(\"Testing for subclass of \", BackendSubclass)\n        if BackendSubclass.framework_name not in prev_backend_names:\n            # check that module was already imported. Otherwise it can't be imported\n            if BackendSubclass.framework_name in sys.modules:\n                if _debug_importing:\n                    print(\"Imported backend for \", BackendSubclass.framework_name)\n                backend = BackendSubclass()\n                _loaded_backends[backend.framework_name] = backend\n                if backend.is_appropriate_type(tensor):\n                    _type2backend[_type] = backend\n                    return backend\n\n    raise RuntimeError(f\"Tensor type unknown to einops {type(tensor)}\")"
+        }
+      ],
+      "explanation": "`get_backend()` is the function that makes einops framework-agnostic without requiring the user to specify which framework they're using. It uses a three-tier lookup strategy.\n\nLine 28 checks `_type2backend`, a dictionary that caches previous lookups — the fast path for repeated operations on the same tensor type. If that misses, lines 33–36 iterate over already-loaded backends and call `is_appropriate_type()`, which performs an `isinstance` check.\n\nThe clever part is the discovery tier on lines 38–60. It walks all `AbstractBackend.__subclasses__()` recursively (lines 40–44), but only instantiates a backend if its framework is already in `sys.modules` (line 53). This is critical — einops never *imports* PyTorch or TensorFlow itself. If you haven't imported torch, the `TorchBackend` is never created, so there's zero overhead for frameworks you aren't using.\n\nLines 46–47 handle a subtle threading concern (referencing issue #391): the list of previously-loaded backends is captured before the loop, so modifications from another thread don't cause iteration errors. The `_debug_importing` guards on lines 49–50 and 54–55 are diagnostic hooks that are off by default."
+    },
+    {
+      "id": "chapter-4",
+      "label": "The Backend Contract",
+      "snippets": [
+        {
+          "filePath": "einops/_backends.py",
+          "startLine": 65,
+          "endLine": 102,
+          "content": "class AbstractBackend:\n    \"\"\"Base backend class, major part of methods are only for debugging purposes.\"\"\"\n\n    framework_name: str\n\n    def is_appropriate_type(self, tensor):\n        \"\"\"helper method should recognize tensors it can handle\"\"\"\n        raise NotImplementedError()\n\n    def from_numpy(self, x):\n        raise NotImplementedError(\"framework doesn't support imperative execution\")\n\n    def to_numpy(self, x):\n        raise NotImplementedError(\"framework doesn't support imperative execution\")\n\n    def create_symbol(self, shape):\n        raise NotImplementedError(\"framework doesn't support symbolic computations\")\n\n    def eval_symbol(self, symbol, symbol_value_pairs):\n        # symbol-value pairs is list[tuple[symbol, value-tensor]]\n        raise NotImplementedError(\"framework doesn't support symbolic computations\")\n\n    def arange(self, start, stop):\n        # supplementary method used only in testing, so should implement CPU version\n        raise NotImplementedError(\"framework doesn't implement arange\")\n\n    def shape(self, x):\n        \"\"\"shape should return a tuple with integers or \\\"shape symbols\\\" (which will evaluate to actual size)\"\"\"\n        return x.shape\n\n    def reshape(self, x, shape):\n        return x.reshape(shape)\n\n    def transpose(self, x, axes):\n        return x.transpose(axes)\n\n    def reduce(self, x, operation, axes):\n        return getattr(x, operation)(axis=axes)"
+        }
+      ],
+      "explanation": "`AbstractBackend` defines the contract every framework must satisfy. It's deliberately minimal — about a dozen methods that cover the fundamental tensor operations einops needs.\n\nLines 70–72 define `is_appropriate_type()`, the method used by `get_backend()` to match tensors to backends. Lines 74–85 split frameworks into two modes: *imperative* (NumPy, PyTorch, JAX) that support `from_numpy`/`to_numpy`, and *symbolic* (TF Keras graph mode, PyTensor) that support `create_symbol`/`eval_symbol`.\n\nThe core operations start at line 91: `shape()`, `reshape()`, `transpose()`, and `reduce()`. Notice the default implementations — `shape` returns `x.shape`, `reshape` calls `x.reshape(shape)`, `transpose` calls `x.transpose(axes)`. These defaults work for NumPy-compatible backends, so only frameworks that differ need to override them. This is a smart use of inheritance: the base class isn't just an interface, it provides working defaults that reduce boilerplate for well-behaved frameworks."
+    },
+    {
+      "id": "chapter-5",
+      "label": "PyTorch's Dialect",
+      "snippets": [
+        {
+          "filePath": "einops/_backends.py",
+          "startLine": 217,
+          "endLine": 228,
+          "content": "class TorchBackend(AbstractBackend):\n    framework_name = \"torch\"\n\n    def __init__(self):\n        import torch\n\n        self.torch = torch\n        # importing would register operations in torch._dynamo for torch.compile\n        from . import _torch_specific  # noqa\n\n    def is_appropriate_type(self, tensor):\n        return isinstance(tensor, self.torch.Tensor)"
+        },
+        {
+          "filePath": "einops/_backends.py",
+          "startLine": 260,
+          "endLine": 271,
+          "content": "    def transpose(self, x, axes):\n        return x.permute(axes)\n\n    def stack_on_zeroth_dimension(self, tensors: list):\n        return self.torch.stack(tensors)\n\n    def add_axes(self, x, n_axes, pos2len):\n        repeats = [-1] * n_axes\n        for axis_position, axis_length in pos2len.items():\n            x = self.add_axis(x, axis_position)\n            repeats[axis_position] = axis_length\n        return x.expand(repeats)"
+        }
+      ],
+      "explanation": "PyTorch speaks its own dialect. Lines 220–225 show `TorchBackend` importing torch and — notably — importing `_torch_specific` to register operations with `torch.compile`.\n\nLine 261 reveals the first dialect difference: where the abstract backend calls `x.transpose(axes)`, PyTorch requires `x.permute(axes)`. A small thing, but exactly the kind of API inconsistency einops absorbs so users don't have to.\n\nThe bigger optimization is in `add_axes` (lines 266–271). Instead of using `tile` (which copies data), PyTorch's backend uses `expand`, which creates a memory-efficient *view* that broadcasts without allocation. The `-1` sentinels in the repeats array tell `expand` to keep existing dimensions unchanged. Between these two snippets, the class also defines `reduce()` with PyTorch-specific calls like `amin`/`amax` — another dialect difference hidden behind the backend interface."
+    },
+    {
+      "id": "chapter-6",
+      "label": "JAX and TensorFlow",
+      "snippets": [
+        {
+          "filePath": "einops/_backends.py",
+          "startLine": 199,
+          "endLine": 214,
+          "content": "class JaxBackend(NumpyBackend):\n    framework_name = \"jax\"\n\n    def __init__(self):\n        super().__init__()\n        self.onp = self.np\n\n        import jax.numpy\n\n        self.np = jax.numpy\n\n    def from_numpy(self, x):\n        return self.np.asarray(x)\n\n    def to_numpy(self, x):\n        return self.onp.asarray(x)"
+        },
+        {
+          "filePath": "einops/_backends.py",
+          "startLine": 351,
+          "endLine": 386,
+          "content": "class TensorflowBackend(AbstractBackend):\n    framework_name = \"tensorflow\"\n\n    def __init__(self):\n        import tensorflow\n\n        self.tf = tensorflow\n\n    def is_appropriate_type(self, tensor):\n        return isinstance(tensor, (self.tf.Tensor, self.tf.Variable))\n\n    def from_numpy(self, x):\n        assert self.tf.executing_eagerly()\n        return self.tf.convert_to_tensor(x)\n\n    def to_numpy(self, x):\n        assert self.tf.executing_eagerly()\n        return x.numpy()\n\n    def arange(self, start, stop):\n        return self.tf.range(start, stop)\n\n    def shape(self, x):\n        if self.tf.executing_eagerly():\n            return tuple(UnknownSize() if d is None else int(d) for d in x.shape)\n        else:\n            static_shape = x.shape.as_list()\n            tf_shape = self.tf.shape(x)\n            # use the static shape where known, otherwise use the TF shape components\n            shape = tuple([s or tf_shape[dim] for dim, s in enumerate(static_shape)])\n            try:\n                hash(shape)\n                return shape\n            except BaseException:\n                # unhashable symbols in shape. Wrap tuple to be hashable.\n                return HashableTuple(shape)"
+        }
+      ],
+      "explanation": "`JaxBackend` on lines 199–214 is strikingly concise — it inherits from `NumpyBackend` and only overrides three things. Line 204 saves the original numpy as `self.onp`, then line 208 swaps `self.np` to `jax.numpy`. Because JAX intentionally mirrors NumPy's API, every inherited method (`reshape`, `transpose`, `tile`, `stack`, etc.) just works. Only `from_numpy` and `to_numpy` need custom logic. This is inheritance used exactly right: the shared interface isn't an accident, it's JAX's design philosophy.\n\n`TensorflowBackend` takes a completely different approach — it can't inherit from NumPy because TensorFlow's API diverges significantly. The most interesting method is `shape()` on lines 373–386. In eager mode (line 374), it returns concrete integers, substituting `UnknownSize()` for any `None` dimensions. In graph mode (lines 377–386), shapes can be symbolic, so it blends static shape information with dynamic `tf.shape()` components. Lines 382–386 handle the case where the resulting shape tuple isn't hashable — wrapping it in `HashableTuple` so einops' LRU caches still work. This accommodation of TensorFlow's dual execution modes is one of the trickiest parts of the backend system."
+    },
+    {
+      "id": "chapter-7",
+      "label": "The Five-Step Recipe",
+      "snippets": [
+        {
+          "filePath": "einops/einops.py",
+          "startLine": 230,
+          "endLine": 252,
+          "content": "def _apply_recipe(\n    backend, recipe: TransformRecipe, tensor: Tensor, reduction_type: Reduction, axes_lengths: HashableAxesLengths\n) -> Tensor:\n    # this method implements actual work for all backends for 3 operations\n    try:\n        init_shapes, axes_reordering, reduced_axes, added_axes, final_shapes, n_axes_w_added = _reconstruct_from_shape(\n            recipe, backend.shape(tensor), axes_lengths\n        )\n    except TypeError:\n        # shape or one of passed axes lengths is not hashable (i.e. they are symbols)\n        _result = _reconstruct_from_shape_uncached(recipe, backend.shape(tensor), axes_lengths)\n        (init_shapes, axes_reordering, reduced_axes, added_axes, final_shapes, n_axes_w_added) = _result\n    if init_shapes is not None:\n        tensor = backend.reshape(tensor, init_shapes)\n    if axes_reordering is not None:\n        tensor = backend.transpose(tensor, axes_reordering)\n    if len(reduced_axes) > 0:\n        tensor = _reduce_axes(tensor, reduction_type=reduction_type, reduced_axes=reduced_axes, backend=backend)\n    if len(added_axes) > 0:\n        tensor = backend.add_axes(tensor, n_axes=n_axes_w_added, pos2len=added_axes)\n    if final_shapes is not None:\n        tensor = backend.reshape(tensor, final_shapes)\n    return tensor"
+        }
+      ],
+      "explanation": "With the backend abstraction and pattern parsing in place, we can now see how they come together in `_apply_recipe` — the function where every einops operation actually executes.\n\nLines 234–241 first reconstruct the concrete transformation parameters from the recipe and the tensor's actual shape, using a cached function. The `try/except TypeError` on line 238 handles symbolic frameworks (like TF graph mode) where shapes aren't hashable — falling back to the uncached version.\n\nThen the five steps proceed in sequence: line 243 does the **initial reshape** (decomposing composite input axes into elementary ones), line 245 **transposes** (reordering axes), line 247 **reduces** (applying min/max/sum/mean), line 249 **adds axes** (for repeat operations), and line 251 does the **final reshape** (composing elementary axes into output groups). Each `if` guard skips unnecessary steps — a simple rearrange with no axis reordering skips the transpose entirely. The backend handles all framework-specific work; this function is pure orchestration."
+    },
+    {
+      "id": "chapter-8",
+      "label": "Parsing the Pattern",
+      "snippets": [
+        {
+          "filePath": "einops/parsing.py",
+          "startLine": 25,
+          "endLine": 38,
+          "content": "class ParsedExpression:\n    \"\"\"\n    non-mutable structure that contains information about one side of expression (e.g. 'b c (h w)')\n    and keeps some information important for downstream\n    \"\"\"\n\n    def __init__(self, expression: str, *, allow_underscore: bool = False, allow_duplicates: bool = False):\n        self.has_ellipsis: bool = False\n        self.has_ellipsis_parenthesized: Optional[bool] = None\n        self.identifiers: set[str] = set()\n        # that's axes like 2, 3, 4 or 5. Axes with size 1 are exceptional and replaced with empty composition\n        self.has_non_unitary_anonymous_axes: bool = False\n        # composition keeps structure of composite axes, see how different corner cases are handled in tests\n        self.composition: list[Union[list[str], str]] = []"
+        },
+        {
+          "filePath": "einops/parsing.py",
+          "startLine": 85,
+          "endLine": 111,
+          "content": "        current_identifier = None\n        for char in expression:\n            if char in \"() \":\n                if current_identifier is not None:\n                    add_axis_name(current_identifier)\n                current_identifier = None\n                if char == \"(\":\n                    if bracket_group is not None:\n                        raise EinopsError(\"Axis composition is one-level (brackets inside brackets not allowed)\")\n                    bracket_group = []\n                elif char == \")\":\n                    if bracket_group is None:\n                        raise EinopsError(\"Brackets are not balanced\")\n                    self.composition.append(bracket_group)\n                    bracket_group = None\n            elif str.isalnum(char) or char in [\"_\", _ellipsis]:\n                if current_identifier is None:\n                    current_identifier = char\n                else:\n                    current_identifier += char\n            else:\n                raise EinopsError(f\"Unknown character '{char}'\")\n\n        if bracket_group is not None:\n            raise EinopsError(f'Imbalanced parentheses in expression: \"{expression}\"')\n        if current_identifier is not None:\n            add_axis_name(current_identifier)"
+        }
+      ],
+      "explanation": "`ParsedExpression` turns strings like `'b c (h w)'` into structured data, and it's entirely framework-agnostic — pure Python string analysis. Lines 31–38 initialize the key fields: `identifiers` (the set of all axis names), `composition` (the nested structure of axes groups), and flags for ellipsis and anonymous axes.\n\nThe main parsing loop on lines 86–111 is a character-by-character state machine. When it encounters `(`, it opens a new `bracket_group` (line 94). Named axes accumulate character by character (lines 101–104). When a space, `)`, or end-of-string is reached, the accumulated identifier is passed to `add_axis_name` (defined between these two snippets), which handles validation, duplicate detection, and adds the axis to either the current bracket group or as a standalone entry. The result: `'b c (h w)'` becomes `composition = [['b'], ['c'], ['h', 'w']]` — a clean structural representation that downstream code can reason about without any string manipulation."
+    },
+    {
+      "id": "chapter-9",
+      "label": "Compiling the Recipe",
+      "snippets": [
+        {
+          "filePath": "einops/einops.py",
+          "startLine": 289,
+          "endLine": 301,
+          "content": "@functools.lru_cache(256)\ndef _prepare_transformation_recipe(\n    pattern: str,\n    operation: Reduction,\n    axes_names: tuple[str, ...],\n    ndim: int,\n) -> TransformRecipe:\n    \"\"\"Perform initial parsing of pattern and provided supplementary info\n    axes_lengths is a tuple of tuples (axis_name, axis_length)\n    \"\"\"\n    left_str, rght_str = pattern.split(\"->\")\n    left = ParsedExpression(left_str)\n    rght = ParsedExpression(rght_str)"
+        },
+        {
+          "filePath": "einops/einops.py",
+          "startLine": 421,
+          "endLine": 442,
+          "content": "    ordered_axis_left = list(itertools.chain(*left_composition))\n    ordered_axis_rght = list(itertools.chain(*rght_composition))\n    reduced_axes = [axis for axis in ordered_axis_left if axis not in rght.identifiers]\n    order_after_transposition = [axis for axis in ordered_axis_rght if axis in left.identifiers] + reduced_axes\n    axes_permutation = [ordered_axis_left.index(axis) for axis in order_after_transposition]\n    added_axes = {\n        i: axis_name2position[axis_name]\n        for i, axis_name in enumerate(ordered_axis_rght)\n        if axis_name not in left.identifiers\n    }\n\n    first_reduced_axis = len(order_after_transposition) - len(reduced_axes)\n\n    return TransformRecipe(\n        elementary_axes_lengths=list(axis_name2known_length.values()),\n        axis_name2elementary_axis={axis: axis_name2position[axis] for axis in axes_names},\n        input_composition_known_unknown=input_axes_known_unknown,\n        axes_permutation=axes_permutation,\n        first_reduced_axis=first_reduced_axis,\n        added_axes=added_axes,\n        output_composite_axes=result_axes_grouping,\n    )"
+        }
+      ],
+      "explanation": "`_prepare_transformation_recipe` bridges parsing and execution. Decorated with `@functools.lru_cache(256)` on line 289, it computes the recipe once per unique combination of pattern, operation, axis names, and tensor dimensionality.\n\nLines 299–301 parse both sides of the pattern into `ParsedExpression` objects. Between these two snippets (lines 302–420, not shown), the function validates axis consistency — rearrange requires identical identifiers on both sides, reduce allows axes to disappear, repeat allows new ones to appear — and then resolves axis lengths and ellipsis dimensions.\n\nLines 421–425 compute the critical transformation parameters: `ordered_axis_left` and `ordered_axis_rght` flatten the composition structures, `reduced_axes` identifies which input axes don't appear in the output, and `axes_permutation` maps each transposed position back to its original. Lines 426–430 identify `added_axes` — positions where new axes appear in the output (used by repeat). Finally, lines 434–442 assemble the `TransformRecipe` with all computed parameters, ready to be applied by `_apply_recipe` with any backend."
+    },
+    {
+      "id": "chapter-10",
+      "label": "Framework-Agnostic Layers",
+      "snippets": [
+        {
+          "filePath": "einops/layers/__init__.py",
+          "startLine": 9,
+          "endLine": 49,
+          "content": "class RearrangeMixin:\n    \"\"\"\n    Rearrange layer behaves identically to einops.rearrange operation.\n\n    :param pattern: str, rearrangement pattern\n    :param axes_lengths: any additional specification of dimensions\n\n    See einops.rearrange for source_examples.\n    \"\"\"\n\n    def __init__(self, pattern: str, **axes_lengths: Any) -> None:\n        super().__init__()\n        self.pattern = pattern\n        self.axes_lengths = axes_lengths\n        # self._recipe = self.recipe()  # checking parameters\n        self._multirecipe = self.multirecipe()\n        self._axes_lengths = tuple(self.axes_lengths.items())\n\n    def __repr__(self) -> str:\n        params = repr(self.pattern)\n        for axis, length in self.axes_lengths.items():\n            params += f\", {axis}={length}\"\n        return f\"{self.__class__.__name__}({params})\"\n\n    def multirecipe(self) -> dict[int, TransformRecipe]:\n        try:\n            return _prepare_recipes_for_all_dims(\n                self.pattern, operation=\"rearrange\", axes_names=tuple(self.axes_lengths)\n            )\n        except EinopsError as e:\n            raise EinopsError(f\" Error while preparing {self!r}\\n {e}\") from None\n\n    def _apply_recipe(self, x):\n        backend = get_backend(x)\n        return _apply_recipe(\n            backend=backend,\n            recipe=self._multirecipe[len(x.shape)],\n            tensor=x,\n            reduction_type=\"rearrange\",\n            axes_lengths=self._axes_lengths,\n        )"
+        }
+      ],
+      "explanation": "Having seen the functional API, we now move to how einops integrates with deep learning frameworks as reusable layers. `RearrangeMixin` provides the framework-agnostic foundation.\n\nLines 19–25 show the `__init__`: it stores the pattern and axes lengths, then immediately calls `multirecipe()` to pre-compute transformation recipes for all possible input dimensionalities. Why pre-compute? Because layers see tensors of varying dimensionality (especially with ellipsis patterns), and computing recipes at forward-pass time would add overhead.\n\nThe `multirecipe()` method on lines 33–39 delegates to `_prepare_recipes_for_all_dims`, which creates recipes for dimensions 0 through 7+ when ellipsis is present.\n\nLines 41–49 define `_apply_recipe`, which framework-specific subclasses call during their forward pass. It looks up the right recipe by `len(x.shape)`, gets the backend via `get_backend(x)`, and delegates to the core `_apply_recipe` function. This mixin pattern means PyTorch, TensorFlow, and Flax layers all share this initialization and recipe-lookup logic — they only differ in which base class they pair with and how they expose the forward method."
+    },
+    {
+      "id": "chapter-11",
+      "label": "PyTorch Layers",
+      "snippets": [
+        {
+          "filePath": "einops/layers/torch.py",
+          "startLine": 13,
+          "endLine": 30,
+          "content": "class Rearrange(RearrangeMixin, torch.nn.Module):\n    def forward(self, input):\n        recipe = self._multirecipe[input.ndim]\n        return apply_for_scriptable_torch(recipe, input, reduction_type=\"rearrange\", axes_dims=self._axes_lengths)\n\n    def _apply_recipe(self, x):\n        # overriding parent method to prevent it's scripting\n        pass\n\n\nclass Reduce(ReduceMixin, torch.nn.Module):\n    def forward(self, input):\n        recipe = self._multirecipe[input.ndim]\n        return apply_for_scriptable_torch(recipe, input, reduction_type=self.reduction, axes_dims=self._axes_lengths)\n\n    def _apply_recipe(self, x):\n        # overriding parent method to prevent it's scripting\n        pass"
+        }
+      ],
+      "explanation": "PyTorch's `Rearrange` on line 13 combines `RearrangeMixin` with `torch.nn.Module` via multiple inheritance. The `forward` method on lines 14–16 looks up the pre-computed recipe by input dimensionality and calls `apply_for_scriptable_torch` — a JIT-compatible version of the apply function. `Reduce` follows the same pattern on lines 23–29. Both override `_apply_recipe` with a no-op (lines 18–19, 28–29) to prevent `torch.jit.script` from trying to compile the mixin's dynamic version, which uses `get_backend` and LRU caches that JIT can't handle."
+    },
+    {
+      "id": "chapter-12",
+      "label": "TensorFlow Layers",
+      "snippets": [
+        {
+          "filePath": "einops/layers/tensorflow.py",
+          "startLine": 25,
+          "endLine": 44,
+          "content": "class Rearrange(RearrangeMixin, Layer):\n    def build(self, input_shape):\n        pass  # layer does not have any parameters to be initialized\n\n    def call(self, inputs):\n        return self._apply_recipe(inputs)\n\n    def get_config(self):\n        return {\"pattern\": self.pattern, **self.axes_lengths}\n\n\nclass Reduce(ReduceMixin, Layer):\n    def build(self, input_shape):\n        pass  # layer does not have any parameters to be initialized\n\n    def call(self, inputs):\n        return self._apply_recipe(inputs)\n\n    def get_config(self):\n        return {\"pattern\": self.pattern, \"reduction\": self.reduction, **self.axes_lengths}"
+        }
+      ],
+      "explanation": "TensorFlow's `Rearrange` on line 25 pairs `RearrangeMixin` with Keras `Layer`. The key differences from PyTorch: an empty `build()` method (lines 26–27) satisfies Keras' parameter-initialization protocol, and `call()` (lines 29–30) replaces `forward()`. Unlike the PyTorch version, TF layers call the mixin's `_apply_recipe` directly — no JIT workaround needed.\n\nThe `get_config()` methods on lines 32–33 and 43–44 enable Keras serialization, allowing models containing einops layers to be saved and loaded. The comment at the top of the file (not shown) notes that TF layer instructions \"change constantly\" — these were re-implemented for TF 2.16, illustrating the ongoing maintenance burden of multi-framework support."
+    },
+    {
+      "id": "chapter-13",
+      "label": "Flax/JAX Layers",
+      "snippets": [
+        {
+          "filePath": "einops/layers/flax.py",
+          "startLine": 14,
+          "endLine": 34,
+          "content": "class Reduce(nn.Module):\n    pattern: str\n    reduction: str\n    sizes: dict = field(default_factory=dict)\n\n    def setup(self):\n        self.reducer = ReduceMixin(self.pattern, self.reduction, **self.sizes)\n\n    def __call__(self, input):\n        return self.reducer._apply_recipe(input)\n\n\nclass Rearrange(nn.Module):\n    pattern: str\n    sizes: dict = field(default_factory=dict)\n\n    def setup(self):\n        self.rearranger = RearrangeMixin(self.pattern, **self.sizes)\n\n    def __call__(self, input):\n        return self.rearranger._apply_recipe(input)"
+        }
+      ],
+      "explanation": "Flax takes a fundamentally different approach to module definition, and the einops layers adapt accordingly. Instead of inheriting from `RearrangeMixin`, the `Reduce` class on lines 14–23 is a pure `nn.Module` that *creates* a `ReduceMixin` instance inside `setup()` (line 20). Similarly, `Rearrange` on lines 26–34 creates a `RearrangeMixin` instance rather than inheriting from it.\n\nWhy composition over inheritance here? Flax modules are dataclass-like: their fields (`pattern`, `reduction`, `sizes`) are declared as class attributes with type annotations, and `setup()` is called by Flax's initialization machinery. The mixin's `__init__` would conflict with this pattern. So instead of fighting the framework, einops wraps the mixin as an internal helper — a pragmatic adaptation that keeps the shared logic intact while respecting Flax's idioms."
+    },
+    {
+      "id": "chapter-14",
+      "label": "PyTorch JIT Support",
+      "snippets": [
+        {
+          "filePath": "einops/_torch_specific.py",
+          "startLine": 77,
+          "endLine": 99,
+          "content": "def apply_for_scriptable_torch(\n    recipe: TransformRecipe, tensor: torch.Tensor, reduction_type: str, axes_dims: list[tuple[str, int]]\n) -> torch.Tensor:\n    backend = TorchJitBackend\n    (\n        init_shapes,\n        axes_reordering,\n        reduced_axes,\n        added_axes,\n        final_shapes,\n        n_axes_w_added,\n    ) = _reconstruct_from_shape_uncached(recipe, backend.shape(tensor), axes_dims=axes_dims)\n    if init_shapes is not None:\n        tensor = backend.reshape(tensor, init_shapes)\n    if axes_reordering is not None:\n        tensor = backend.transpose(tensor, axes_reordering)\n    if len(reduced_axes) > 0:\n        tensor = backend.reduce(tensor, operation=reduction_type, reduced_axes=reduced_axes)\n    if len(added_axes) > 0:\n        tensor = backend.add_axes(tensor, n_axes=n_axes_w_added, pos2len=added_axes)\n    if final_shapes is not None:\n        tensor = backend.reshape(tensor, final_shapes)\n    return tensor"
+        }
+      ],
+      "explanation": "Moving from layers to framework-specific optimizations, `apply_for_scriptable_torch` on lines 77–99 mirrors the core `_apply_recipe` function but is designed for `torch.jit.script` compatibility. The normal `_apply_recipe` uses dynamic dispatch (`get_backend`), LRU caches, and polymorphic backend calls — none of which `torch.jit.script` can handle.\n\nLine 80 uses `TorchJitBackend` (a static class defined above, not shown) instead of the dynamic backend. Line 88 calls `_reconstruct_from_shape_uncached` directly — bypassing the LRU cache since `torch.jit.script` can't trace through `functools.lru_cache`. Lines 89–99 then execute the same five-step pipeline: reshape, transpose, reduce, add axes, final reshape.\n\nThis duplication is intentional. The module also registers einops operations with `torch.compile`/`torch._dynamo` (not shown), so the functional API works with the newer compilation approach while layers remain JIT-scriptable."
+    },
+    {
+      "id": "chapter-15",
+      "label": "The Array API Path",
+      "snippets": [
+        {
+          "filePath": "einops/array_api.py",
+          "startLine": 7,
+          "endLine": 24,
+          "content": "def reduce(tensor: Tensor, pattern: str, reduction: Reduction, **axes_lengths: int) -> Tensor:\n    if isinstance(tensor, list):\n        if len(tensor) == 0:\n            raise TypeError(\"Einops can't be applied to an empty list\")\n        xp = tensor[0].__array_namespace__()\n        tensor = xp.stack(tensor)\n    else:\n        xp = tensor.__array_namespace__()\n    try:\n        hashable_axes_lengths = tuple(axes_lengths.items())\n        recipe = _prepare_transformation_recipe(pattern, reduction, axes_names=tuple(axes_lengths), ndim=tensor.ndim)\n        return _apply_recipe_array_api(\n            xp,\n            recipe=recipe,\n            tensor=tensor,\n            reduction_type=reduction,\n            axes_lengths=hashable_axes_lengths,\n        )"
+        }
+      ],
+      "explanation": "Finally, `array_api.py` represents einops' forward-looking approach. Instead of the backend abstraction, it uses Python's Array API standard — any framework that implements `__array_namespace__()` works automatically.\n\nLine 14 shows the key difference: `xp = tensor.__array_namespace__()` replaces `backend = get_backend(tensor)`. The namespace `xp` *is* the framework itself (e.g., `numpy`, `jax.numpy`), and lines 17–18 call `_prepare_transformation_recipe` and `_apply_recipe_array_api` directly — reusing the same recipe system but with standardized API calls (`xp.reshape`, `xp.permute_dims`) instead of backend methods.\n\nThis means any framework adopting the Array API standard gets einops support with zero additional backend code. It's the same \"what vs. how\" separation, but the \"how\" is now standardized across the ecosystem."
+    },
+    {
+      "id": "chapter-16",
+      "label": "The Full Picture",
+      "snippets": [],
+      "explanation": "Einops achieves framework independence through a layered architecture, and each layer solves a distinct problem.\n\nAt the foundation, **pattern parsing** (`ParsedExpression`) and **recipe compilation** (`TransformRecipe`) are completely framework-agnostic. They turn human-readable strings into structured execution plans using pure Python — no tensor library needed. The LRU caching ensures this work happens once and is reused across calls.\n\nIn the middle, the **backend abstraction** (`AbstractBackend` and its subclasses) translates generic operations into framework-specific calls. Each backend adapts to its framework's quirks: PyTorch uses `permute` and `expand`, JAX inherits from NumPy, TensorFlow handles symbolic shapes with `HashableTuple`. The lazy-loading design via `sys.modules` means you never pay for frameworks you don't use.\n\nAt the top, **layer mixins** (`RearrangeMixin`, `ReduceMixin`) provide shared neural-network layer logic, while framework-specific files pair these mixins with each framework's module system — `torch.nn.Module`, Keras `Layer`, and Flax `nn.Module`. And the newer **Array API** path shows where this is heading: toward a world where the backend layer itself becomes unnecessary.\n\nThe key insight is that tensor manipulation, at its core, is just five operations: reshape, transpose, reduce, broadcast, and reshape again. By building an expressive notation on top of these universal primitives, einops makes the framework a detail rather than a constraint."
+    }
+  ]
+}

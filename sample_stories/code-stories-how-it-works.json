@@ -1,0 +1,195 @@
+{
+  "id": "1535a0fa-cb98-40d8-b015-9725fe8effb5",
+  "title": "How Code Stories Works: From Query to Interactive Tour",
+  "query": "How does code stories work?",
+  "repo": "charleslow/code-stories",
+  "commitHash": "48c7b1d7f934253ec66805c057673489ed274865",
+  "createdAt": "2026-02-10T12:00:00.000Z",
+  "chapters": [
+    {
+      "id": "chapter-0",
+      "label": "The Big Picture",
+      "snippets": [],
+      "explanation": "Code Stories transforms a natural-language question about any codebase into a guided, chapter-by-chapter tour — complete with real code snippets and prose explanations. It's a \"compile-to-static\" architecture split across two independent packages in a monorepo.\n\nThe **CLI** (`packages/cli/`) takes a query like \"How does authentication work?\" and orchestrates Claude — Anthropic's AI assistant — to explore the codebase, plan a narrative, and produce a structured JSON artifact. The **viewer** (`packages/viewer/`) is a React single-page application that renders that JSON as an interactive reading experience, with syntax-highlighted code on the left and markdown explanations on the right.\n\nThe two halves are completely decoupled. The CLI writes a story JSON file; the viewer fetches and displays it from any URL — no server required. This means stories are portable, self-contained documents that work even if the original repository changes or goes offline.\n\nWe'll start by examining the data model that connects these two halves, then trace the generation pipeline, and finally explore how the viewer brings stories to life."
+    },
+    {
+      "id": "chapter-1",
+      "label": "Story Data Model",
+      "snippets": [
+        {
+          "filePath": "packages/viewer/src/types/index.ts",
+          "startLine": 1,
+          "endLine": 41,
+          "content": "// Core data types for Code Stories\n\nexport interface Story {\n  id: string;\n  title: string;\n  query: string;\n  repo?: string | null;\n  commitHash: string;\n  createdAt: string;\n  chapters: Chapter[];\n}\n\nexport interface Chapter {\n  id: string;\n  label: string;\n  snippets: CodeSnippet[];\n  explanation: string;\n}\n\nexport interface CodeSnippet {\n  filePath: string;\n  startLine: number;\n  endLine: number;\n  content: string;\n}\n\n// Manifest for tracking all stories\nexport interface StoryManifest {\n  stories: StoryMetadata[];\n}\n\nexport interface StoryMetadata {\n  id: string;\n  title: string;\n  commitHash: string;\n  createdAt: string;\n}\n\n// App state for viewer\nexport type AppState = 'home' | 'loading' | 'reading' | 'error';"
+        }
+      ],
+      "explanation": "Every story revolves around these TypeScript interfaces. A `Story` (line 3) carries metadata — id, title, the original query, an optional GitHub repo identifier, and the commit hash it was generated from. The `chapters` array is where the content lives.\n\nEach `Chapter` (line 13) has a short `label` for sidebar display, an `explanation` string containing markdown prose, and an array of `CodeSnippet` objects. Notice that `CodeSnippet` (line 20) stores the actual `content` — the raw source code — alongside `filePath`, `startLine`, and `endLine`. This is a deliberate choice: by embedding code directly rather than referencing it, stories become self-contained artifacts that don't depend on the source repository being available at read time.\n\nThe `AppState` type on line 40 previews the viewer's state machine: four simple states that drive the entire UI. We'll see this in action when we reach the viewer chapters."
+    },
+    {
+      "id": "chapter-2",
+      "label": "CLI Entry Point",
+      "snippets": [
+        {
+          "filePath": "packages/cli/index.js",
+          "startLine": 290,
+          "endLine": 314,
+          "content": "program\n  .name('code-stories')\n  .description('Generate narrative-driven code stories using Claude')\n  .version('0.1.0')\n  .argument('<query>', 'Question about the codebase to generate a story for')\n  .option('-r, --repo <repo>', 'GitHub repository (user/repo or full URL)')\n  .action(async (query, options) => {\n    let repoId = null;\n    let exitCode = 0;\n\n    const spinner = ora({ prefixText: '  ' });\n\n    try {\n      if (options.repo) {\n        spinner.start();\n        const result = cloneRepo(options.repo, spinner);\n        activeCloneDir = result.tempDir;\n        repoId = result.repoId;\n        spinner.stop();\n      }\n\n      await generateStory(query, {\n        cwd: activeCloneDir || process.cwd(),\n        repoId,\n      });\n    } catch (error) {\n      spinner.fail(error.message);\n      exitCode = 1;\n    } finally {\n      if (activeCloneDir) {\n        cleanupClone(activeCloneDir);\n        activeCloneDir = null;\n      }\n    }\n\n    if (exitCode !== 0) {\n      process.exit(exitCode);\n    }\n  });"
+        }
+      ],
+      "explanation": "At the bottom of `index.js`, Commander sets up the CLI interface. Line 294 declares a single positional argument — the user's query — and line 295 adds an optional `--repo` flag for analyzing remote GitHub repositories.\n\nThe action handler (line 296) follows a clear two-phase pattern: if `--repo` is provided, it clones the repository first (lines 303-308), then passes the working directory to `generateStory()`. The `activeCloneDir` variable ensures cleanup happens even on errors or signals — notice the `finally` block on line 318 and the signal handlers defined earlier in the file.\n\nThis design keeps the entry point thin: it handles argument parsing and repo acquisition, then delegates the real work to `generateStory()`."
+    },
+    {
+      "id": "chapter-3",
+      "label": "Spawning Claude",
+      "snippets": [
+        {
+          "filePath": "packages/cli/index.js",
+          "startLine": 198,
+          "endLine": 213,
+          "content": "  return new Promise((resolve, reject) => {\n    // Spawn Claude CLI\n    const allowedTools = 'Read,Grep,Glob,Write';\n    const claude = spawn('claude', [\n      '-p',\n      '--allowedTools', allowedTools,\n      '--add-dir', generationDir,\n    ], {\n      cwd,\n      env: { ...process.env },\n    });\n\n    // Send prompt via stdin\n    claude.stdin.write(prompt);\n    claude.stdin.end();"
+        },
+        {
+          "filePath": "packages/cli/index.js",
+          "startLine": 228,
+          "endLine": 253,
+          "content": "      // Check if story.json was created\n      const storyPath = path.join(generationDir, 'story.json');\n      if (fs.existsSync(storyPath)) {\n        try {\n          const story = JSON.parse(fs.readFileSync(storyPath, 'utf-8'));\n\n          // Validate story.id is a proper UUID\n          const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\n          if (!story.id || !uuidRegex.test(story.id)) {\n            throw new Error(`Invalid story ID: \"${story.id}\" is not a valid UUID. Expected format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`);\n          }\n\n          // Copy to stories directory\n          const finalPath = path.join(STORIES_DIR, `${story.id}.json`);\n          fs.writeFileSync(finalPath, JSON.stringify(story, null, 2));\n\n          // Update manifest (with file locking for concurrent safety)\n          updateManifest(STORIES_DIR, {\n            id: story.id,\n            title: story.title,\n            commitHash: story.commitHash,\n            createdAt: story.createdAt,\n          });\n\n          // Clean up tmp directory\n          fs.rmSync(generationDir, { recursive: true, force: true });"
+        }
+      ],
+      "explanation": "Here's where the magic happens. Rather than building a code analysis engine, Code Stories delegates everything to Claude CLI. Line 201 spawns `claude` with carefully chosen flags: `-p` for pipe mode (read prompt from stdin, no interactive UI), `--allowedTools` restricted to just `Read,Grep,Glob,Write` (no shell access), and `--add-dir` pointing to the generation directory where Claude will write its checkpoint files.\n\nLines 211-212 send the entire prompt through stdin and close the stream, letting Claude work autonomously. The prompt itself — which we'll examine next — instructs Claude to explore the codebase, plan chapters, and write a `story.json` file.\n\nThe second snippet shows what happens when Claude finishes. Lines 229-230 check for the output file. If it exists, line 232 parses and validates it — including a UUID format check on lines 235-238 that ensures the story ID is well-formed. Line 241 copies the validated story to its final location in the `stories/` directory, then lines 245-250 register it in the manifest. Between these two snippets, the code handles stderr collection and error events, which we can skip over since the core flow is what matters here."
+    },
+    {
+      "id": "chapter-4",
+      "label": "Checkpoint Progress",
+      "snippets": [
+        {
+          "filePath": "packages/cli/index.js",
+          "startLine": 88,
+          "endLine": 98,
+          "content": "// Stage definitions for progress tracking\nconst STAGES = [\n  { file: 'exploration_scan.md', checkpoint: 'EXPLORATION_SCANNED', label: 'Scanning file tree' },\n  { file: 'exploration_read.md', checkpoint: 'EXPLORATION_READ', label: 'Reading key files' },\n  { file: 'exploration_notes.md', checkpoint: 'STAGE_1_COMPLETE', label: 'Documenting architecture' },\n  { file: 'narrative_outline.md', checkpoint: 'STAGE_2_COMPLETE', label: 'Planning outline' },\n  { file: 'narrative_outline_reviewed.md', checkpoint: 'STAGE_3_COMPLETE', label: 'Reviewing outline' },\n  { file: 'snippets_mapping.md', checkpoint: 'STAGE_4_COMPLETE', label: 'Identifying snippets' },\n  { file: 'explanations_draft.md', checkpoint: 'STAGE_5_COMPLETE', label: 'Crafting explanations' },\n  { file: 'story.json', checkpoint: null, label: 'Finalizing story' },\n];"
+        },
+        {
+          "filePath": "packages/cli/index.js",
+          "startLine": 100,
+          "endLine": 119,
+          "content": "// Check current stage based on files\nfunction getCurrentStage(generationDir) {\n  let stage = 0;\n\n  for (let i = 0; i < STAGES.length; i++) {\n    const { file, checkpoint } = STAGES[i];\n    const filePath = path.join(generationDir, file);\n\n    if (!fs.existsSync(filePath)) break;\n\n    if (checkpoint) {\n      const content = fs.readFileSync(filePath, 'utf-8');\n      if (!content.includes(checkpoint)) break;\n    }\n\n    stage = i + 1;\n  }\n\n  return stage;\n}"
+        }
+      ],
+      "explanation": "How do you track the progress of an AI that's running autonomously? Code Stories uses a creative approach: checkpoint files with sentinel strings.\n\nThe `STAGES` array (lines 89-98) defines eight stages, each with a filename, a checkpoint sentinel, and a human-readable label. For example, stage 0 expects `exploration_scan.md` to contain the string `EXPLORATION_SCANNED`. The prompt instructs Claude to end each intermediate file with these exact strings — turning file contents into progress signals.\n\n`getCurrentStage` (lines 101-119) iterates through stages in order, checking two conditions: does the file exist (line 108), and does it contain the checkpoint string (lines 110-113)? It stops at the first incomplete stage. This sequential checking ensures stages are tracked in order — you can't jump to stage 5 without completing stages 0-4 first.\n\nBack in `generateStory()`, a `setInterval` polls this function every second and updates the spinner. It's filesystem polling as IPC — not elegant in the traditional sense, but perfectly suited to communicating with an AI subprocess that has no other callback mechanism."
+    },
+    {
+      "id": "chapter-5",
+      "label": "Prompt Engineering",
+      "snippets": [
+        {
+          "filePath": "packages/cli/prompt.js",
+          "startLine": 1,
+          "endLine": 47,
+          "content": "// Build the prompt for Claude\nexport function buildPrompt(query, generationDir, commitHash, generationId, repoId) {\n  const jsonSchema = `{\n  \"id\": \"string (UUID)\",\n  \"title\": \"string\",\n  \"query\": \"string\",\n  \"repo\": \"string or null (GitHub user/repo if from remote)\",\n  \"commitHash\": \"string\",\n  \"createdAt\": \"string (ISO 8601)\",\n  \"chapters\": [\n    {\n      \"id\": \"string (e.g., chapter-0)\",\n      \"label\": \"string (2-4 words for sidebar)\",\n      \"snippets\": [\n        {\n          \"filePath\": \"string (relative path)\",\n          \"startLine\": \"number (1-indexed)\",\n          \"endLine\": \"number (1-indexed)\",\n          \"content\": \"string (actual code)\"\n        }\n      ],\n      \"explanation\": \"string (markdown)\"\n    }\n  ]\n}`;\n\n  return `You are an expert code narrator. Your job is to create a \"code story\" — a guided,\nchapter-by-chapter tour of a codebase that reads like a friendly colleague walking\nsomeone through the code. The aim is not just to communicate information, but insights.\n\nThe user's query is: \"${query}\"\n\nYou will produce a single JSON object matching this schema:\n${jsonSchema}\n\nUse these fixed values:\n- id: \"${generationId}\"\n- commitHash: \"${commitHash}\"\n- repo: ${repoId ? `\"${repoId}\"` : \"null\"}\n- createdAt: current ISO 8601 timestamp\n- query: \"${query}\"\n\n## Pipeline\n\nFollow these 6 stages in order. Do all your thinking, exploring, and planning\nBEFORE you output the JSON. The JSON must be your FINAL output — a single fenced\ncode block and nothing else after it."
+        }
+      ],
+      "explanation": "`buildPrompt` is arguably the most important function in the project. It constructs the entire instruction set that Claude follows to generate a story.\n\nLines 3-25 define the JSON schema inline as a template string — this tells Claude exactly what shape the output must have. Lines 27-41 set up the persona (\"You are an expert code narrator\") and inject dynamic values: the user's query, the generation ID, commit hash, and repository identifier. The template literal on line 39 handles the nullable `repoId` with a ternary that outputs either a quoted string or the literal `null`.\n\nWhat follows after line 47 (not shown in the snippet) is a detailed multi-stage pipeline: explore the codebase, plan an outline, review it, identify code snippets, write explanations, and run quality checks. Each stage includes checkpoint instructions that write files to `generationDir` — those same checkpoint files that `getCurrentStage` polls for progress.\n\nThe prompt is essentially a program written in natural language, and `buildPrompt` is the compiler that parametrizes it. This \"prompt as architecture\" approach means the quality of generated stories is driven primarily by prompt engineering, not by traditional code."
+    },
+    {
+      "id": "chapter-6",
+      "label": "Manifest Locking",
+      "snippets": [
+        {
+          "filePath": "packages/cli/index.js",
+          "startLine": 121,
+          "endLine": 158,
+          "content": "// Update manifest.json with file locking for concurrent safety.\n// Uses mkdir as an atomic lock primitive (fails if dir already exists).\nfunction updateManifest(storiesDir, entry) {\n  const manifestPath = path.join(storiesDir, 'manifest.json');\n  const lockPath = manifestPath + '.lock';\n  const maxRetries = 50;\n  const retryDelayMs = 100;\n\n  // Acquire lock\n  for (let i = 0; i < maxRetries; i++) {\n    try {\n      fs.mkdirSync(lockPath);\n      break;\n    } catch (e) {\n      if (e.code !== 'EEXIST') throw e;\n      if (i === maxRetries - 1) {\n        throw new Error(\n          `Could not acquire manifest lock after ${maxRetries} retries. ` +\n          `If no other process is running, delete ${lockPath}`\n        );\n      }\n      // Synchronous sleep before retrying\n      const end = Date.now() + retryDelayMs;\n      while (Date.now() < end) { /* busy wait */ }\n    }\n  }\n\n  try {\n    let manifest = { stories: [] };\n    if (fs.existsSync(manifestPath)) {\n      manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));\n    }\n    manifest.stories.unshift(entry);\n    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));\n  } finally {\n    fs.rmdirSync(lockPath);\n  }\n}"
+        }
+      ],
+      "explanation": "When a story is generated, it needs to be registered in `manifest.json` — a catalog of all stories. But what if multiple stories are being generated concurrently? `updateManifest` solves this with a filesystem-based lock.\n\nLines 130-146 implement lock acquisition using `mkdir` — an operation that's atomic on all filesystems. If the directory already exists (meaning another process holds the lock), it retries up to 50 times with a 100ms busy-wait delay between attempts. The busy-wait on line 144 is intentional; `setTimeout` wouldn't work because this is synchronous code.\n\nLines 148-157 perform the actual update inside a `try/finally` block: read the current manifest (or create a new one), prepend the new entry with `unshift` so newest stories appear first, write it back, and release the lock by removing the directory. The `finally` guarantees the lock is released even if an error occurs.\n\nWith the CLI pipeline complete, let's shift to the other half of the system — the React viewer that brings these generated stories to life."
+    },
+    {
+      "id": "chapter-7",
+      "label": "Viewer State Machine",
+      "snippets": [
+        {
+          "filePath": "packages/viewer/src/components/App.tsx",
+          "startLine": 15,
+          "endLine": 58,
+          "content": "export function App() {\n  const [appState, setAppState] = useState<AppState>('home');\n  const [currentStory, setCurrentStory] = useState<Story | null>(null);\n  const [currentUrl, setCurrentUrl] = useState<string | null>(null);\n  const [error, setError] = useState<string | null>(null);\n  const [recentStories, setRecentStories] = useState<RecentStory[]>([]);\n\n  // Load recent stories on mount\n  useEffect(() => {\n    setRecentStories(getRecentStories());\n  }, []);\n\n  // Check URL params on mount\n  useEffect(() => {\n    const params = new URLSearchParams(window.location.search);\n    const storyUrl = getStoryUrlFromParams(params);\n    if (storyUrl) {\n      loadStory(storyUrl);\n    }\n  }, []);\n\n  const loadStory = useCallback(async (url: string) => {\n    setAppState('loading');\n    setError(null);\n    setCurrentUrl(url);\n\n    try {\n      const story = await fetchStory(url);\n      setCurrentStory(story);\n      setAppState('reading');\n\n      // Save to recent stories\n      addRecentStory(url, story.title);\n      setRecentStories(getRecentStories());\n\n      // Update URL params without reload\n      const newUrl = new URL(window.location.href);\n      newUrl.searchParams.set('url', url);\n      window.history.pushState({}, '', newUrl.toString());\n    } catch (err) {\n      setError(err instanceof Error ? err.message : 'Failed to load story');\n      setAppState('error');\n    }\n  }, []);"
+        }
+      ],
+      "explanation": "The `App` component drives the entire viewer through four states. Line 16 initializes `appState` as `'home'`, and lines 17-20 set up companion state for the current story, URL, error message, and recent stories list.\n\nTwo `useEffect` hooks fire on mount: lines 23-25 load recent stories from localStorage, while lines 28-33 check the URL for a `?url=` or `?repo=` parameter and auto-load a story if one is found. This means sharing a link like `?repo=user/repo&story=abc` immediately starts loading — no landing page interaction needed.\n\nThe `loadStory` callback (lines 36-58) orchestrates the loading flow: set state to `'loading'`, call `fetchStory` from the API layer, and on success transition to `'reading'`. Lines 47-48 save the story to localStorage for the \"Recent Stories\" list. Lines 51-53 update the browser URL with `pushState` so the story URL is shareable and bookmarkable without triggering a page reload. On failure, the state moves to `'error'` with the error message preserved for display."
+    },
+    {
+      "id": "chapter-8",
+      "label": "URL & Validation",
+      "snippets": [
+        {
+          "filePath": "packages/viewer/src/services/api.ts",
+          "startLine": 62,
+          "endLine": 90,
+          "content": "function parseRepoBranch(repoParam: string, branchParam: string | null): { owner: string; repo: string; branch: string } {\n  const parts = repoParam.split('/');\n  if (parts.length >= 3) {\n    return { owner: parts[0], repo: parts[1], branch: parts.slice(2).join('/') };\n  }\n  return { owner: parts[0], repo: parts[1], branch: branchParam || 'main' };\n}\n\n/**\n * Parse URL parameters to determine story source\n * Supports:\n * - ?url=<direct-url-to-json>\n * - ?repo=user/repo&story=story-id (GitHub shorthand)\n * - ?repo=user/repo/branch&story=story-id (branch in repo path)\n * - ?repo=user/repo&branch=master&story=story-id (explicit branch param)\n */\nexport function getStoryUrlFromParams(params: URLSearchParams): string | null {\n  const directUrl = params.get('url');\n  if (directUrl) return directUrl;\n\n  const repo = params.get('repo');\n  const story = params.get('story');\n  if (repo && story) {\n    const { owner, repo: repoName, branch } = parseRepoBranch(repo, params.get('branch'));\n    return `https://raw.githubusercontent.com/${owner}/${repoName}/${branch}/stories/${story}.json`;\n  }\n\n  return null;\n}"
+        },
+        {
+          "filePath": "packages/viewer/src/services/api.ts",
+          "startLine": 20,
+          "endLine": 46,
+          "content": "function validateStory(data: unknown): Story {\n  if (!data || typeof data !== 'object') {\n    throw new Error('Invalid story: expected a JSON object');\n  }\n  const obj = data as Record<string, unknown>;\n  if (typeof obj.id !== 'string') throw new Error(\"Invalid story: missing 'id' field\");\n  if (typeof obj.title !== 'string') throw new Error(\"Invalid story: missing 'title' field\");\n  if (!Array.isArray(obj.chapters)) throw new Error(\"Invalid story: missing 'chapters' array\");\n\n  for (let i = 0; i < obj.chapters.length; i++) {\n    const ch = obj.chapters[i] as Record<string, unknown>;\n    if (typeof ch.id !== 'string') throw new Error(`Invalid story: chapter ${i} missing 'id'`);\n    if (typeof ch.label !== 'string') throw new Error(`Invalid story: chapter ${i} missing 'label'`);\n    if (typeof ch.explanation !== 'string') throw new Error(`Invalid story: chapter ${i} missing 'explanation'`);\n    if (!Array.isArray(ch.snippets)) throw new Error(`Invalid story: chapter ${i} missing 'snippets' array`);\n\n    for (let j = 0; j < (ch.snippets as unknown[]).length; j++) {\n      const sn = (ch.snippets as Record<string, unknown>[])[j];\n      if (typeof sn.filePath !== 'string') throw new Error(`Invalid story: chapter ${i} snippet ${j} missing 'filePath'`);\n      if (typeof sn.startLine !== 'number') throw new Error(`Invalid story: chapter ${i} snippet ${j} missing 'startLine'`);\n      if (typeof sn.endLine !== 'number') throw new Error(`Invalid story: chapter ${i} snippet ${j} missing 'endLine'`);\n      if (typeof sn.content !== 'string') throw new Error(`Invalid story: chapter ${i} snippet ${j} missing 'content'`);\n    }\n  }\n\n  return data as Story;\n}"
+        }
+      ],
+      "explanation": "When a user provides a GitHub shorthand like `user/repo`, how does the viewer find the actual story file? `parseRepoBranch` (lines 62-68) splits the repo parameter, handling both `user/repo` (defaulting to the `main` branch) and `user/repo/branch` formats.\n\n`getStoryUrlFromParams` (lines 78-90) then constructs the full URL. Line 80 checks for a direct `?url=` parameter first — the simplest case. If not found, lines 83-87 combine the parsed repo info with a story ID to build a `raw.githubusercontent.com` URL. This means the viewer never needs its own backend — GitHub's raw content serving acts as the \"API.\"\n\nThe second snippet shows runtime validation. Since story JSON can come from any URL, `validateStory` (lines 20-46) performs thorough structural checks: the top-level object must have `id`, `title`, and `chapters` (lines 25-27), and each chapter must have all required fields including properly structured snippets with `filePath`, `startLine`, `endLine`, and `content` (lines 36-42). Every check throws a descriptive error that pinpoints exactly which field is missing and in which chapter — making debugging straightforward when someone provides malformed JSON."
+    },
+    {
+      "id": "chapter-9",
+      "label": "Split-Pane Reader",
+      "snippets": [
+        {
+          "filePath": "packages/viewer/src/components/ChapterDisplay.tsx",
+          "startLine": 16,
+          "endLine": 57,
+          "content": "const MIN_PANEL_PERCENT = 30;\nconst MAX_PANEL_PERCENT = 70;\n\nexport function ChapterDisplay({ chapter, currentIndex, totalChapters, onPrev, onNext, storyQuery, storyRepo }: ChapterDisplayProps) {\n  const isFirst = currentIndex === 0;\n  const isLast = currentIndex === totalChapters - 1;\n\n  const [codePanelPercent, setCodePanelPercent] = useState(50);\n  const [isDragging, setIsDragging] = useState(false);\n  const containerRef = useRef<HTMLDivElement>(null);\n\n  const handleMouseDown = useCallback((e: React.MouseEvent) => {\n    e.preventDefault();\n    setIsDragging(true);\n  }, []);\n\n  useEffect(() => {\n    if (!isDragging) return;\n\n    const handleMouseMove = (e: MouseEvent) => {\n      if (!containerRef.current) return;\n\n      const rect = containerRef.current.getBoundingClientRect();\n      const x = e.clientX - rect.left;\n      const percent = (x / rect.width) * 100;\n\n      const clamped = Math.min(MAX_PANEL_PERCENT, Math.max(MIN_PANEL_PERCENT, percent));\n      setCodePanelPercent(clamped);\n    };\n\n    const handleMouseUp = () => {\n      setIsDragging(false);\n    };\n\n    document.addEventListener('mousemove', handleMouseMove);\n    document.addEventListener('mouseup', handleMouseUp);\n\n    return () => {\n      document.removeEventListener('mousemove', handleMouseMove);\n      document.removeEventListener('mouseup', handleMouseUp);\n    };\n  }, [isDragging]);"
+        },
+        {
+          "filePath": "packages/viewer/src/components/ChapterDisplay.tsx",
+          "startLine": 59,
+          "endLine": 77,
+          "content": "  return (\n    <div className=\"chapter-display\">\n      <div className=\"chapter-content\" ref={containerRef}>\n        <CodePanel\n          snippets={chapter.snippets}\n          style={{ flex: `0 0 ${codePanelPercent}%` }}\n          storyQuery={storyQuery}\n          storyRepo={storyRepo}\n        />\n        <div\n          className={`splitter ${isDragging ? 'dragging' : ''}`}\n          onMouseDown={handleMouseDown}\n        >\n          <div className=\"splitter-handle\" />\n        </div>\n        <ExplanationPanel\n          explanation={chapter.explanation}\n          style={{ flex: `0 0 ${100 - codePanelPercent}%` }}\n        />\n      </div>"
+        }
+      ],
+      "explanation": "`ChapterDisplay` implements the side-by-side reading experience. Line 23 tracks the code panel's width as a percentage, defaulting to a 50/50 split. The `handleMouseDown` callback on line 27 starts a drag, and the `useEffect` on lines 32-57 adds document-level `mousemove` and `mouseup` listeners that update the split position — clamped between 30% and 70% by the constants on lines 16-17.\n\nIn the JSX (lines 62-77), `CodePanel` and `ExplanationPanel` each receive a `flex` style calculated from `codePanelPercent`. Between them sits the splitter div, which toggles a `dragging` CSS class for visual feedback. The complementary width calculation on line 76 (`100 - codePanelPercent`) ensures the two panels always fill the available space."
+    },
+    {
+      "id": "chapter-10",
+      "label": "Syntax Highlighting",
+      "snippets": [
+        {
+          "filePath": "packages/viewer/src/components/CodePanel.tsx",
+          "startLine": 4,
+          "endLine": 16,
+          "content": "const EXT_TO_LANGUAGE: Record<string, string> = {\n  '.py': 'python', '.js': 'javascript', '.ts': 'typescript', '.tsx': 'typescript',\n  '.jsx': 'jsx', '.rs': 'rust', '.go': 'go', '.java': 'java',\n  '.cpp': 'cpp', '.cc': 'cpp', '.h': 'cpp', '.c': 'c',\n  '.rb': 'ruby', '.sh': 'bash', '.css': 'css', '.html': 'markup',\n  '.json': 'json', '.yaml': 'yaml', '.yml': 'yaml', '.md': 'markdown', '.sql': 'sql',\n};\n\nfunction getLanguageFromPath(filePath: string): string {\n  const dot = filePath.lastIndexOf('.');\n  if (dot === -1) return 'typescript';\n  return EXT_TO_LANGUAGE[filePath.slice(dot)] ?? 'typescript';\n}"
+        },
+        {
+          "filePath": "packages/viewer/src/components/CodePanel.tsx",
+          "startLine": 56,
+          "endLine": 79,
+          "content": "          <Highlight\n            theme={themes.oneDark}\n            code={snippet.content}\n            language={getLanguageFromPath(snippet.filePath)}\n          >\n            {({ className, style, tokens, getLineProps, getTokenProps }) => (\n              <pre className={className} style={style}>\n                {tokens.map((line, i) => (\n                  <div key={i} {...getLineProps({ line })}>\n                    <span className=\"line-number\">\n                      {snippet.startLine + i}\n                    </span>\n                    {line.map((token, key) => (\n                      <span key={key} {...getTokenProps({ token })} />\n                    ))}\n                  </div>\n                ))}\n              </pre>\n            )}\n          </Highlight>\n        </div>\n      ))}\n    </div>\n  );"
+        }
+      ],
+      "explanation": "How does the viewer know that `.py` files need Python highlighting? The `EXT_TO_LANGUAGE` map on lines 4-10 provides the answer — a simple lookup table covering 19 common extensions. `getLanguageFromPath` (lines 12-16) extracts the file extension and falls back to TypeScript for unknown types, a reasonable default for a developer-focused tool.\n\nThe rendering on lines 56-79 uses prism-react-renderer's `Highlight` component with the oneDark theme. The key detail is on line 66: line numbers are computed as `snippet.startLine + i`, so they match the original file positions rather than starting from 1. This is essential for the story's explanations to reference specific lines accurately — when a chapter says \"Line 42 does X,\" the reader needs to see line 42 in the code panel."
+    },
+    {
+      "id": "chapter-11",
+      "label": "Keyboard Navigation",
+      "snippets": [
+        {
+          "filePath": "packages/viewer/src/components/StoryViewer.tsx",
+          "startLine": 22,
+          "endLine": 43,
+          "content": "  // Keyboard navigation\n  useEffect(() => {\n    const handleKeyDown = (e: KeyboardEvent) => {\n      if (e.key === 'ArrowLeft' || e.key === 'h' || e.key === 'H') {\n        goToPrev();\n      } else if (e.key === 'ArrowRight' || e.key === 'l' || e.key === 'L') {\n        goToNext();\n      } else if (e.key === 'Home') {\n        setCurrentChapterIndex(0);\n      } else if (e.key === 'End') {\n        setCurrentChapterIndex(story.chapters.length - 1);\n      } else if (e.key >= '1' && e.key <= '9') {\n        const index = parseInt(e.key) - 1;\n        if (index < story.chapters.length) {\n          setCurrentChapterIndex(index);\n        }\n      }\n    };\n\n    window.addEventListener('keydown', handleKeyDown);\n    return () => window.removeEventListener('keydown', handleKeyDown);\n  }, [goToPrev, goToNext, story.chapters.length]);"
+        }
+      ],
+      "explanation": "`StoryViewer` registers a keydown listener on mount (lines 23-43) that supports three navigation styles: arrow keys for broad accessibility (lines 25-28), `h`/`l` for vim users, and `Home`/`End` for jumping to the first or last chapter. Lines 33-37 add a number-key shortcut — pressing `1` through `9` jumps directly to that chapter. This multi-modal approach reflects the developer-first audience the tool targets."
+    },
+    {
+      "id": "chapter-12",
+      "label": "Putting It Together",
+      "snippets": [],
+      "explanation": "Code Stories works as a two-phase pipeline: **generate**, then **view**.\n\nIn the generation phase, the CLI spawns Claude with a carefully crafted prompt that acts as a natural-language program. Claude explores the target codebase, plans a narrative arc, selects code snippets, writes explanations, and produces a self-contained JSON file. The CLI monitors progress through checkpoint files — a creative IPC mechanism born from the constraint of working with an AI subprocess that has no callback API.\n\nIn the viewing phase, a static React SPA fetches that JSON from any URL — a raw GitHub link, a direct file URL, or a local dev server path. It validates the data at runtime, then renders it as an interactive split-pane reader with syntax highlighting, markdown explanations, and keyboard navigation.\n\nThe key architectural insight is **decoupling**. Stories are portable artifacts: they embed their own code snippets, carry their own metadata, and don't depend on the source repository being available. The viewer needs no backend — GitHub's raw content API serves as the distribution layer. And the CLI needs no code analysis engine — Claude's capabilities *are* the engine, directed by prompt engineering.\n\nThe result is a system where the most important \"code\" is arguably the prompt itself."
+    }
+  ]
+}
