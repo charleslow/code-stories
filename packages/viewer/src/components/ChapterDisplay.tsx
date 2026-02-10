@@ -9,12 +9,14 @@ interface ChapterDisplayProps {
   totalChapters: number;
   onPrev: () => void;
   onNext: () => void;
+  storyQuery?: string;
+  storyRepo?: string | null;
 }
 
 const MIN_PANEL_PERCENT = 30;
 const MAX_PANEL_PERCENT = 70;
 
-export function ChapterDisplay({ chapter, currentIndex, totalChapters, onPrev, onNext }: ChapterDisplayProps) {
+export function ChapterDisplay({ chapter, currentIndex, totalChapters, onPrev, onNext, storyQuery, storyRepo }: ChapterDisplayProps) {
   const isFirst = currentIndex === 0;
   const isLast = currentIndex === totalChapters - 1;
 
@@ -60,6 +62,8 @@ export function ChapterDisplay({ chapter, currentIndex, totalChapters, onPrev, o
         <CodePanel
           snippets={chapter.snippets}
           style={{ flex: `0 0 ${codePanelPercent}%` }}
+          storyQuery={storyQuery}
+          storyRepo={storyRepo}
         />
         <div
           className={`splitter ${isDragging ? 'dragging' : ''}`}
