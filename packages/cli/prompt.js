@@ -77,8 +77,11 @@ teaching point — a single insight the reader takes away.
 Guidelines:
 - Start with an overview chapter (no code snippets) that orients the reader
 - Build from foundations to synthesis: show building blocks before compositions
-- End with a code-bearing chapter that serves as a natural conclusion — do NOT add
-  a separate prose-only summary/philosophy chapter
+- End with a summary chapter (no code snippets) that provides closure to the story.
+  This final chapter should recap the key insights covered, highlight important design
+  decisions or patterns the reader encountered, and leave the reader with a clear
+  mental model of how the pieces fit together. Keep it concise and avoid restating
+  every detail — focus on the "so what" and any overarching themes
 - Chapter labels should be 2-4 words (for the sidebar)
 - If the story naturally divides into distinct phases or subsystems (e.g., a basic
   mechanism and then an advanced variant), introduce the transition between phases
@@ -103,7 +106,7 @@ Before proceeding, evaluate your outline against these criteria:
 3. Is the progression logical — could a newcomer follow along?
 4. Are there any redundant chapters that could be merged?
 5. Does the story cover initialization, execution, and key mechanisms?
-6. Is the final chapter code-bearing (not a prose-only summary)?
+6. Is the final chapter a prose-only summary that provides closure?
 7. Does the story have a natural narrative arc (beginning, middle, end)?
 8. Are transitions between chapters smooth?
 9. Do any chapters need to show code regions with significant debug/logging code?
@@ -132,7 +135,7 @@ Constraints:
   possible.
 - The \`content\` field must match the actual source code exactly.
 - \`startLine\` and \`endLine\` must be accurate.
-- The overview chapter (first) has an empty snippets array.
+- The overview chapter (first) and summary chapter (last) have empty snippets arrays.
 - Snippets MUST be free of noise: debug/logging statements, commented-out code, and
   verbose error handling should constitute no more than ~10% of the shown lines.
   IMPORTANT: To meet this threshold, you almost always need to END the snippet before
@@ -173,6 +176,10 @@ Guidelines:
   to 150-200 words. Define key terms concisely (one sentence each, not full paragraphs).
   The overview should orient the reader, not teach — the teaching happens in subsequent
   chapters.
+- The summary chapter (last) has an empty snippets array, just explanation. Keep it
+  to 150-250 words. Recap the key insights and design patterns covered in the story,
+  highlight any important takeaways, and give the reader a sense of closure. Don't
+  just list what was covered — synthesize it into a coherent "big picture" reflection.
 - Focus on "why" and insight, not just describing what the code does
 - Reference specific lines in the code snippets consistently across ALL chapters that
   have snippets (e.g., "Line 42 does X because..." or "Lines 10-15 handle...")
@@ -205,8 +212,8 @@ revise the affected chapters before outputting.
    snippet range to exclude them.
 3. **Snippet Coherence**: All snippets are coherent as far as possible, or provide
    sufficient context to understand their place in the codebase.
-4. **Overview chapter has no snippets**: The first chapter (chapter-0) must have an
-   empty snippets array. If it contains any snippets, move them to a later chapter.
+4. **Bookend chapters have no snippets**: The first chapter (overview) and last chapter
+   (summary) must both have empty snippets arrays.
 5. **Transition variety**: No transition opener pattern (e.g., "This is...") appears
    in more than 2 non-overview chapters. Scan your chapter openings and revise any
    that repeat.

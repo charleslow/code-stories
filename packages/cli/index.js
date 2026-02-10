@@ -118,6 +118,45 @@ function getCurrentStage(generationDir) {
   return stage;
 }
 
+// Update manifest.json with file locking for concurrent safety.
+// Uses mkdir as an atomic lock primitive (fails if dir already exists).
+function updateManifest(storiesDir, entry) {
+  const manifestPath = path.join(storiesDir, 'manifest.json');
+  const lockPath = manifestPath + '.lock';
+  const maxRetries = 50;
+  const retryDelayMs = 100;
+
+  // Acquire lock
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      fs.mkdirSync(lockPath);
+      break;
+    } catch (e) {
+      if (e.code !== 'EEXIST') throw e;
+      if (i === maxRetries - 1) {
+        throw new Error(
+          `Could not acquire manifest lock after ${maxRetries} retries. ` +
+          `If no other process is running, delete ${lockPath}`
+        );
+      }
+      // Synchronous sleep before retrying
+      const end = Date.now() + retryDelayMs;
+      while (Date.now() < end) { /* busy wait */ }
+    }
+  }
+
+  try {
+    let manifest = { stories: [] };
+    if (fs.existsSync(manifestPath)) {
+      manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+    }
+    manifest.stories.unshift(entry);
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+  } finally {
+    fs.rmdirSync(lockPath);
+  }
+}
+
 // Generate a story
 async function generateStory(query, options = {}) {
   const { cwd = process.cwd(), repoId = null } = options;
@@ -202,19 +241,13 @@ async function generateStory(query, options = {}) {
           const finalPath = path.join(STORIES_DIR, `${story.id}.json`);
           fs.writeFileSync(finalPath, JSON.stringify(story, null, 2));
 
-          // Update manifest
-          const manifestPath = path.join(STORIES_DIR, 'manifest.json');
-          let manifest = { stories: [] };
-          if (fs.existsSync(manifestPath)) {
-            manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
-          }
-          manifest.stories.unshift({
+          // Update manifest (with file locking for concurrent safety)
+          updateManifest(STORIES_DIR, {
             id: story.id,
             title: story.title,
             commitHash: story.commitHash,
             createdAt: story.createdAt,
           });
-          fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
 
           // Clean up tmp directory
           fs.rmSync(generationDir, { recursive: true, force: true });
