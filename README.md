@@ -1,66 +1,79 @@
 # Code Stories
 
-Understand code through narrative-driven stories. Code Stories transforms questions like "How does authentication work?" into guided, chapter-by-chapter walkthroughs of your codebase.
+Understand code through narrative-driven stories. Ask a question about any codebase — "How does authentication work?", "Trace a request from API to database" — and get a guided, chapter-by-chapter walkthrough with real code snippets and prose explanations.
 
-## Packages
+[See an example story](https://charleslow.github.io/code-stories/?repo=charleslow/code-stories&story=story-generation-pipeline)
 
-This monorepo contains two packages:
+## Requirements
 
-### CLI (`packages/cli`)
+- Node.js 18+
+- [Claude CLI](https://claude.ai/cli) installed and configured
+- A git repository to analyze
 
-Generate stories locally in any repository using Claude.
+## Quick Start
+
+### Generate a Story (CLI)
 
 ```bash
-# Install globally
+# Install the CLI
 npm install -g code-stories
 
-# Run in any git repo
+# Navigate to any git repo and ask a question
 cd my-project
 code-stories "How does the authentication flow work?"
 
-# Or analyze any public GitHub repo directly
+# Or analyze a public GitHub repo directly
 code-stories --repo user/repo "How does the authentication flow work?"
-
-# Output: ./stories/{id}.json
 ```
 
-### Viewer (`packages/viewer`)
+Stories are saved as JSON to `./stories/{id}.json` in your current working directory.
 
-Static web viewer for reading stories. Deployed at [charleslow.github.io/code-stories](https://charleslow.github.io/code-stories/).
+### Read a Story (Viewer)
 
-Supports loading stories via URL parameters:
-- `?url=<direct-url-to-json>`
-- `?repo=user/repo&story=story-id`
+The viewer is deployed at [charleslow.github.io/code-stories](https://charleslow.github.io/code-stories/).
 
-## Workflow
+Once you've generated a story, commit and push the `stories/` folder to GitHub, then open:
 
-1. **Generate**: Run `code-stories "your question"` in any repo
-2. **Commit**: Stories are saved to `./stories/` - commit and push them
-3. **View**: Open the viewer with `?repo=your/repo&story=story-id`
+```
+https://charleslow.github.io/code-stories/?repo=user/repo&story=story-id
+```
 
-## Local Development
+You can also load any story JSON URL directly:
+
+```
+https://charleslow.github.io/code-stories/?url=<direct-url-to-story-json>
+```
+
+You can also run your own viewer locally or deploy your own by reading further.
+
+---
+
+## Development
+
+This is a monorepo with two packages:
+- `packages/cli/` — CLI for generating stories (uses Claude CLI)
+- `packages/viewer/` — Static React viewer for reading stories
 
 ```bash
-# Install dependencies
+# Install all dependencies from root
 npm install
 ```
 
 ### Testing the Viewer
 
 ```bash
-# Development server (hot reload)
+# Development server with hot reload
 npm run dev
 # Opens at http://localhost:5173/code-stories/
 
 # Production build + preview
-npm run build
-npm run preview
+npm run build && npm run preview
 # Opens at http://localhost:4173/code-stories/
 ```
 
 Test with the sample story:
 ```
-http://localhost:5173/code-stories/?url=https://raw.githubusercontent.com/charleslow/code-stories/main/sample_stories/story-generation-pipeline.json
+http://localhost:5173/code-stories/?repo=charleslow/code-stories&story=story-generation-pipeline
 ```
 
 View locally generated stories (dev mode only):
@@ -71,7 +84,7 @@ http://localhost:5173/code-stories/?url=/local-stories/{story-id}.json
 ### Testing the CLI
 
 ```bash
-# Run directly from repo
+# Run directly from the repo
 node packages/cli/index.js "How does the viewer load stories?"
 
 # Or link globally for testing
@@ -82,20 +95,21 @@ code-stories "Your question here"
 
 Requires [Claude CLI](https://claude.ai/cli) to be installed and configured.
 
-## How It Works
+### Publishing to npm
 
-Code Stories uses a 5-stage generation pipeline:
+```bash
+cd packages/cli
+npm publish
+```
 
-1. **Explore** - Analyze the codebase structure
-2. **Outline** - Create narrative structure with chapter sequence
-3. **Review** - Refine flow and pacing
-4. **Identify Snippets** - Select exact code segments to display
-5. **Craft Explanations** - Write context-aware prose for each chapter
+### Deploying the Viewer to GitHub Pages
 
-The result is a JSON file containing chapters, each with code snippets and markdown explanations.
+```bash
+# Build the viewer
+npm run build
 
-## Requirements
+# The built output is in packages/viewer/dist/
+# Push to the gh-pages branch (or configure GitHub Actions)
+```
 
-- Node.js 18+
-- [Claude CLI](https://claude.ai/cli) installed and configured
-- Git (for commit hash tracking)
+The viewer is configured with base path `/code-stories/` in `packages/viewer/vite.config.ts` for deployment at `<username>.github.io/code-stories/`.
