@@ -15,15 +15,12 @@ Understand code through narrative-driven stories. Ask a question about any codeb
 ### Generate a Story (CLI)
 
 ```bash
-# Install the CLI
-npm install -g code-stories
-
 # Navigate to any git repo and ask a question
 cd my-project
-code-stories "How does the authentication flow work?"
+npx code-stories "How does the authentication flow work?"
 
 # Or analyze a public GitHub repo directly
-code-stories --repo user/repo "How does the authentication flow work?"
+npx code-stories --repo user/repo "How does the authentication flow work?"
 ```
 
 Stories are saved as JSON to `./stories/{id}.json` in your current working directory.
