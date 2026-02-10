@@ -939,3 +939,83 @@ body {
   font-size: 0.875rem;
   font-family: var(--font-mono);
 }
+
+/* ================================================
+   MOBILE TABS
+   ================================================ */
+.mobile-tabs {
+  display: flex;
+  background: var(--bg-glass);
+  border-bottom: 1px solid var(--border-neutral);
+  flex-shrink: 0;
+}
+
+.mobile-tab {
+  flex: 1;
+  padding: 0.75rem 1rem;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border-bottom: 2px solid transparent;
+}
+
+.mobile-tab.active {
+  color: var(--accent-strong);
+  border-bottom-color: var(--accent-strong);
+}
+
+/* ================================================
+   MOBILE RESPONSIVE
+   ================================================ */
+@media (max-width: 768px) {
+  .sidebar {
+    display: none;
+  }
+
+  .splitter {
+    display: none;
+  }
+
+  .story-header {
+    padding: 0.75rem 1rem;
+    gap: 0.75rem;
+  }
+
+  .story-header h1 {
+    font-size: 1rem;
+    padding: 0 0.5rem;
+  }
+
+  .commit-hash {
+    display: none;
+  }
+
+  .explanation-panel {
+    padding: 1.5rem 1rem;
+  }
+
+  .code-panel {
+    padding: 1rem;
+  }
+
+  .chapter-navigation {
+    padding: 1rem;
+  }
+
+  .landing-page {
+    padding: 2rem 1rem;
+  }
+
+  .landing-page h1 {
+    font-size: 1.75rem;
+  }
+
+  .url-form {
+    flex-direction: column;
+  }
+}

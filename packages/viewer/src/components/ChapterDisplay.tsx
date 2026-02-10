@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
 import type { Chapter } from '../types';
 import { CodePanel } from './CodePanel';
 import { ExplanationPanel } from './ExplanationPanel';
@@ -16,10 +16,25 @@ interface ChapterDisplayProps {
 const MIN_PANEL_PERCENT = 30;
 const MAX_PANEL_PERCENT = 70;
 
+const mobileQuery = '(max-width: 768px)';
+
+function useIsMobile() {
+  return useSyncExternalStore(
+    (cb) => {
+      const mql = window.matchMedia(mobileQuery);
+      mql.addEventListener('change', cb);
+      return () => mql.removeEventListener('change', cb);
+    },
+    () => window.matchMedia(mobileQuery).matches,
+  );
+}
+
 export function ChapterDisplay({ chapter, currentIndex, totalChapters, onPrev, onNext, storyQuery, storyRepo }: ChapterDisplayProps) {
   const isFirst = currentIndex === 0;
   const isLast = currentIndex === totalChapters - 1;
+  const isMobile = useIsMobile();
 
+  const [activeTab, setActiveTab] = useState<'explanation' | 'code'>('explanation');
   const [codePanelPercent, setCodePanelPercent] = useState(50);
   const [isDragging, setIsDragging] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -58,23 +73,45 @@ export function ChapterDisplay({ chapter, currentIndex, totalChapters, onPrev, o
 
   return (
     <div className="chapter-display">
-      <div className="chapter-content" ref={containerRef}>
-        <CodePanel
-          snippets={chapter.snippets}
-          style={{ flex: `0 0 ${codePanelPercent}%` }}
-          storyQuery={storyQuery}
-          storyRepo={storyRepo}
-        />
-        <div
-          className={`splitter ${isDragging ? 'dragging' : ''}`}
-          onMouseDown={handleMouseDown}
-        >
-          <div className="splitter-handle" />
+      {isMobile && (
+        <div className="mobile-tabs">
+          <button
+            className={`mobile-tab ${activeTab === 'explanation' ? 'active' : ''}`}
+            onClick={() => setActiveTab('explanation')}
+          >
+            Explanation
+          </button>
+          <button
+            className={`mobile-tab ${activeTab === 'code' ? 'active' : ''}`}
+            onClick={() => setActiveTab('code')}
+          >
+            Code
+          </button>
         </div>
-        <ExplanationPanel
-          explanation={chapter.explanation}
-          style={{ flex: `0 0 ${100 - codePanelPercent}%` }}
-        />
+      )}
+      <div className="chapter-content" ref={containerRef}>
+        {(!isMobile || activeTab === 'code') && (
+          <CodePanel
+            snippets={chapter.snippets}
+            style={isMobile ? { flex: '1 1 100%' } : { flex: `0 0 ${codePanelPercent}%` }}
+            storyQuery={storyQuery}
+            storyRepo={storyRepo}
+          />
+        )}
+        {!isMobile && (
+          <div
+            className={`splitter ${isDragging ? 'dragging' : ''}`}
+            onMouseDown={handleMouseDown}
+          >
+            <div className="splitter-handle" />
+          </div>
+        )}
+        {(!isMobile || activeTab === 'explanation') && (
+          <ExplanationPanel
+            explanation={chapter.explanation}
+            style={isMobile ? { flex: '1 1 100%' } : { flex: `0 0 ${100 - codePanelPercent}%` }}
+          />
+        )}
       </div>
       <div className="chapter-navigation">
         <button
