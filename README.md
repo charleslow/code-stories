@@ -3,9 +3,9 @@
 Understand code through narrative-driven stories. Ask a question about any codebase — "How does authentication work?", "Trace a request from API to database" — and get a guided, chapter-by-chapter walkthrough with real code snippets and prose explanations.
 
 Sample stories:
+- [How Code Stories Works: From Query to Interactive Tour](https://charleslow.github.io/code-stories/?url=https://raw.githubusercontent.com/charleslow/code-stories/main/sample_stories/code-stories-how-it-works.json)
 - [One API, Many Frameworks: How Einops Achieves Framework Independence](https://charleslow.github.io/code-stories/?url=https://raw.githubusercontent.com/charleslow/code-stories/main/sample_stories/einops.json)
 - [nanoGPT: A Language Model from Scratch](https://charleslow.github.io/code-stories/?url=https://raw.githubusercontent.com/charleslow/code-stories/main/sample_stories/nanogpt.json)
-- [How Code Stories Works: From Query to Interactive Tour](https://charleslow.github.io/code-stories/?url=https://raw.githubusercontent.com/charleslow/code-stories/main/sample_stories/code-stories-how-it-works.json)
 
 ## Requirements
 
