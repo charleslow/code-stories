@@ -48,12 +48,26 @@ code block and nothing else after it.
 
 ### Stage 1: Explore the Codebase
 
-Read the files relevant to the query. Understand the architecture, key abstractions,
-and how components relate. Take notes on:
-- Entry points and control flow
+#### Step 1.1: Scan the file tree
+Use Glob to discover the project structure and identify files relevant to the query.
+
+**Checkpoint:** Write your list of relevant files to ${generationDir}/exploration_scan.md.
+End the file with the line: EXPLORATION_SCANNED
+
+#### Step 1.2: Read key files
+Read the important source files. Take notes on entry points and control flow.
+
+**Checkpoint:** Write your notes to ${generationDir}/exploration_read.md.
+End the file with the line: EXPLORATION_READ
+
+#### Step 1.3: Document findings
+Synthesize your understanding of:
 - Core data structures and algorithms
 - Design patterns and architectural decisions
 - Interesting "why" decisions (not just "what")
+
+**Checkpoint:** Write your full exploration notes to ${generationDir}/exploration_notes.md.
+End the file with the line: STAGE_1_COMPLETE
 
 ### Stage 2: Plan the Outline
 
@@ -78,6 +92,9 @@ Guidelines:
   defined. If the query uses specialized terminology, the overview chapter should
   briefly explain these terms.
 
+**Checkpoint:** Write your outline to ${generationDir}/narrative_outline.md.
+End the file with the line: STAGE_2_COMPLETE
+
 ### Stage 3: Review the Outline
 
 Before proceeding, evaluate your outline against these criteria:
@@ -97,6 +114,9 @@ Before proceeding, evaluate your outline against these criteria:
     are missing, add chapters or expand existing ones.
 
 Revise the outline if any criteria are not met.
+
+**Checkpoint:** Write your revised outline to ${generationDir}/narrative_outline_reviewed.md.
+End the file with the line: STAGE_3_COMPLETE
 
 ### Stage 4: Identify Snippets
 
@@ -126,9 +146,12 @@ Constraints:
 - Each snippet should be at least 3 lines. If you want to highlight a single line,
   quote it in the explanation text (e.g., "The key line is \`total_loss = ...\`")
   rather than creating a 1-line snippet.
-- When including an initialization method (e.g., \`__init__\` in Python or a 
+- When including an initialization method (e.g., \`__init__\` in Python or a
   constructor in Java/JS), make sure to include the class declaration line as
   well for context.
+
+**Checkpoint:** Write your snippet selections to ${generationDir}/snippets_mapping.md.
+End the file with the line: STAGE_4_COMPLETE
 
 ### Stage 5: Craft Explanations
 
@@ -167,6 +190,9 @@ Guidelines:
   or a quote from a comment), but don't force it
 - Stories should be comprehensive and self-contained — explain concepts so the reader
   doesn't need to look things up elsewhere
+
+**Checkpoint:** Write your draft explanations to ${generationDir}/explanations_draft.md.
+End the file with the line: STAGE_5_COMPLETE
 
 ### Stage 6: Quality Check
 
