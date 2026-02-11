@@ -55,6 +55,20 @@ function validateManifest(data: unknown): StoryManifest {
 }
 
 /**
+ * Convert a GitHub blob URL to a raw.githubusercontent.com URL.
+ * e.g. https://github.com/user/repo/blob/main/path/file.json
+ *   -> https://raw.githubusercontent.com/user/repo/main/path/file.json
+ * Returns the original URL if it's not a GitHub blob URL.
+ */
+function normalizeGithubUrl(url: string): string {
+  const match = url.match(/^https?:\/\/github\.com\/([^/]+\/[^/]+)\/blob\/(.+)$/);
+  if (match) {
+    return `https://raw.githubusercontent.com/${match[1]}/${match[2]}`;
+  }
+  return url;
+}
+
+/**
  * Parse a repo param into { user, repo, branch }.
  * Supports "user/repo" (branch defaults to param or "main")
  * and "user/repo/branch" shorthand.
@@ -70,20 +84,22 @@ function parseRepoBranch(repoParam: string, branchParam: string | null): { owner
 /**
  * Parse URL parameters to determine story source
  * Supports:
- * - ?url=<direct-url-to-json>
+ * - ?url=<direct-url-to-json> (also accepts GitHub blob URLs)
  * - ?repo=user/repo&story=story-id (GitHub shorthand)
  * - ?repo=user/repo/branch&story=story-id (branch in repo path)
  * - ?repo=user/repo&branch=master&story=story-id (explicit branch param)
+ * - ?folder=custom_folder (default: "stories")
  */
 export function getStoryUrlFromParams(params: URLSearchParams): string | null {
   const directUrl = params.get('url');
-  if (directUrl) return directUrl;
+  if (directUrl) return normalizeGithubUrl(directUrl);
 
   const repo = params.get('repo');
   const story = params.get('story');
   if (repo && story) {
     const { owner, repo: repoName, branch } = parseRepoBranch(repo, params.get('branch'));
-    return `https://raw.githubusercontent.com/${owner}/${repoName}/${branch}/stories/${story}.json`;
+    const folder = params.get('folder') || 'stories';
+    return `https://raw.githubusercontent.com/${owner}/${repoName}/${branch}/${folder}/${story}.json`;
   }
 
   return null;
@@ -92,19 +108,21 @@ export function getStoryUrlFromParams(params: URLSearchParams): string | null {
 /**
  * Parse URL parameters to determine manifest source
  * Supports:
- * - ?manifest=<direct-url-to-manifest>
+ * - ?manifest=<direct-url-to-manifest> (also accepts GitHub blob URLs)
  * - ?repo=user/repo (GitHub shorthand - loads manifest)
  * - ?repo=user/repo/branch (branch in repo path)
  * - ?repo=user/repo&branch=master (explicit branch param)
+ * - ?folder=custom_folder (default: "stories")
  */
 export function getManifestUrlFromParams(params: URLSearchParams): string | null {
   const manifestUrl = params.get('manifest');
-  if (manifestUrl) return manifestUrl;
+  if (manifestUrl) return normalizeGithubUrl(manifestUrl);
 
   const repo = params.get('repo');
   if (repo && !params.get('story')) {
     const { owner, repo: repoName, branch } = parseRepoBranch(repo, params.get('branch'));
-    return `https://raw.githubusercontent.com/${owner}/${repoName}/${branch}/stories/manifest.json`;
+    const folder = params.get('folder') || 'stories';
+    return `https://raw.githubusercontent.com/${owner}/${repoName}/${branch}/${folder}/manifest.json`;
   }
 
   return null;

@@ -16,11 +16,18 @@ export function LandingPage({ recentStories, onLoadStory }: LandingPageProps) {
       // Handle different input formats
       let url = trimmed;
 
+      // Convert GitHub blob URLs to raw URLs
+      const blobMatch = trimmed.match(/^https?:\/\/github\.com\/([^/]+\/[^/]+)\/blob\/(.+)$/);
+      if (blobMatch) {
+        url = `https://raw.githubusercontent.com/${blobMatch[1]}/${blobMatch[2]}`;
+      }
       // If it looks like a GitHub shorthand (user/repo/story-id or user/repo:story-id)
-      const shorthandMatch = trimmed.match(/^([^\/]+\/[^\/]+)[\/:]([a-f0-9-]+)$/i);
-      if (shorthandMatch) {
-        const [, repo, storyId] = shorthandMatch;
-        url = `https://raw.githubusercontent.com/${repo}/main/stories/${storyId}.json`;
+      else {
+        const shorthandMatch = trimmed.match(/^([^\/]+\/[^\/]+)[\/:]([a-f0-9-]+)$/i);
+        if (shorthandMatch) {
+          const [, repo, storyId] = shorthandMatch;
+          url = `https://raw.githubusercontent.com/${repo}/main/stories/${storyId}.json`;
+        }
       }
 
       onLoadStory(url);
@@ -47,9 +54,9 @@ export function LandingPage({ recentStories, onLoadStory }: LandingPageProps) {
       <div className="format-hints">
         <h3>Supported formats:</h3>
         <ul>
-          <li><code>https://raw.githubusercontent.com/...</code> - Direct URL to story JSON</li>
-          <li><code>user/repo/story-id</code> - GitHub shorthand (loads from main branch)</li>
-          <li>Any public URL to a valid story JSON file</li>
+          <li><code>{'https://github.com/<user>/<repo>/blob/<branch>/<folder>/<story>.json'}</code></li>
+          <li><code>{'https://raw.githubusercontent.com/<user>/<repo>/<branch>/<folder>/<story>.json'}</code></li>
+          <li><code>{'<user>/<repo>/<story-id>'}</code> - GitHub shorthand (main branch, stories/ folder)</li>
         </ul>
       </div>
 
