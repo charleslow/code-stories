@@ -1,0 +1,244 @@
+{
+  "id": "22a3e76c-1d4e-40f2-91f4-4b924cb05359",
+  "title": "Inside BentoML: From Decorators to Production Inference",
+  "query": "Walk me through the bentoml stack and why do so many teams run ML inference on it?",
+  "repo": "bentoml/BentoML",
+  "commitHash": "309db0bc3e69de3880e0550a3399157611b9e929",
+  "createdAt": "2026-02-10T12:00:00.000Z",
+  "chapters": [
+    {
+      "id": "chapter-0",
+      "label": "The Big Picture",
+      "snippets": [],
+      "explanation": "BentoML is a framework that turns ML models into production HTTP services with minimal ceremony. Where most teams struggle with the gap between a working model in a notebook and a reliable, scalable API, BentoML bridges it with a decorator-driven approach: annotate a Python class, and the framework handles HTTP routing, request batching, containerization, and observability.\n\nA few key terms before we dive in. A **Service** is a Python class decorated with `@bentoml.service` that becomes a deployable unit. **API methods** are individual endpoints within a service, defined with the `@bentoml.api` decorator. An **IODescriptor** is BentoML's Pydantic-based mechanism for automatically converting function type annotations into HTTP request/response schemas. **Adaptive batching** is the technique of grouping individual inference requests into efficient GPU batches at runtime. A **Bento** is the versioned, immutable artifact that packages code, models, dependencies, and configuration for deployment.\n\nThe codebase is split across three main packages: `_bentoml_sdk` (the public API users interact with), `_bentoml_impl` (runtime internals like the server and serialization), and `bentoml._internal` (core infrastructure including batching, configuration, and container building). Let's start with how you define a service."
+    },
+    {
+      "id": "chapter-1",
+      "label": "Defining a Service",
+      "snippets": [
+        {
+          "filePath": "src/_bentoml_sdk/service/factory.py",
+          "startLine": 88,
+          "endLine": 104,
+          "content": "@attrs.define\nclass Service(t.Generic[T_co]):\n    \"\"\"A Bentoml service that can be served by BentoML server.\"\"\"\n\n    name: str\n    config: Config = attrs.field(factory=Config)\n    inner: type[T_co] = _DummyService\n    image: t.Optional[Image] = None\n    description: t.Optional[str] = None\n    path_prefix: str = \"\"\n    envs: t.List[BentoEnvSchema] = attrs.field(factory=list, converter=convert_envs)\n    labels: t.Dict[str, str] = attrs.field(factory=dict)\n    models: list[Model[t.Any]] = attrs.field(factory=list)\n    cmd: t.Optional[t.List[str]] = None\n    bento: t.Optional[Bento] = attrs.field(init=False, default=None)\n    apis: dict[str, APIMethod[..., t.Any]] = attrs.field(factory=dict)\n    dependencies: dict[str, Dependency[t.Any]] = attrs.field(factory=dict, init=False)"
+        },
+        {
+          "filePath": "src/_bentoml_sdk/service/factory.py",
+          "startLine": 589,
+          "endLine": 606,
+          "content": "    config = kwargs\n\n    def decorator(inner: type[T]) -> Service[T]:\n        if isinstance(inner, Service):\n            raise TypeError(\"service() decorator can only be applied once\")\n        return service_class(\n            name=name or inner.__name__,\n            config=config,\n            inner=inner,\n            image=image,\n            description=description,\n            path_prefix=path_prefix,\n            envs=envs or [],\n            labels=labels or {},\n            cmd=cmd,\n        )\n\n    return decorator(inner) if inner is not None else decorator"
+        }
+      ],
+      "explanation": "Everything starts with `Service`, an `attrs`-defined generic class that wraps a user's plain Python class (the `inner` field on line 94) into a fully managed service object. The `apis` dictionary on line 103 is where API methods land after scanning the user's class. The `dependencies` field on line 104, marked `init=False`, gets populated automatically during post-initialization when BentoML discovers `Dependency` descriptors on the inner class.\n\nThe second snippet shows the decorator body. Line 595 is the key insight: if no `name` is given, it defaults to `inner.__name__` — the class name becomes the service name. Line 606 implements the dual-mode pattern supporting both `@service` (bare) and `@service(traffic={\"timeout\": 60})` (with arguments)."
+    },
+    {
+      "id": "chapter-2",
+      "label": "The @api Decorator",
+      "snippets": [
+        {
+          "filePath": "src/_bentoml_sdk/decorators.py",
+          "startLine": 60,
+          "endLine": 109,
+          "content": "def api(\n    func: t.Callable[t.Concatenate[t.Any, P], R] | None = None,\n    *,\n    route: str | None = None,\n    name: str | None = None,\n    input_spec: type[IODescriptor] | None = None,\n    output_spec: type[IODescriptor] | None = None,\n    batchable: bool = False,\n    batch_dim: int | tuple[int, int] = 0,\n    max_batch_size: int = 100,\n    max_latency_ms: int = 60000,\n) -> (\n    APIMethod[P, R]\n    | t.Callable[[t.Callable[t.Concatenate[t.Any, P], R]], APIMethod[P, R]]\n):\n    \"\"\"Make a BentoML API method.\n    This decorator can be used either with or without arguments.\n\n    Args:\n        func: The function to be wrapped.\n        route: The route of the API. e.g. \"/predict\"\n        name: The name of the API.\n        input_spec: The input spec of the API, should be a subclass of ``pydantic.BaseModel``.\n        output_spec: The output spec of the API, should be a subclass of ``pydantic.BaseModel``.\n        batchable: Whether the API is batchable.\n        batch_dim: The batch dimension of the API.\n        max_batch_size: The maximum batch size of the API.\n        max_latency_ms: The maximum latency of the API.\n    \"\"\"\n\n    def wrapper(func: t.Callable[t.Concatenate[t.Any, P], R]) -> APIMethod[P, R]:\n        if func.__name__.startswith(\"__\"):\n            raise ValueError(\"API methods cannot start with '__'\")\n        params: dict[str, t.Any] = {\n            \"batchable\": batchable,\n            \"batch_dim\": batch_dim,\n            \"max_batch_size\": max_batch_size,\n            \"max_latency_ms\": max_latency_ms,\n        }\n        if route is not None:\n            params[\"route\"] = route\n        if input_spec is not None:\n            params[\"input_spec\"] = input_spec\n        if output_spec is not None:\n            params[\"output_spec\"] = output_spec\n        return APIMethod(func, **params)\n\n    if func is not None:\n        return wrapper(func)\n    return wrapper"
+        }
+      ],
+      "explanation": "The `@api` decorator is where a method becomes an HTTP endpoint. Its signature on lines 60-70 reveals BentoML's batching-first design philosophy — `batchable`, `batch_dim`, `max_batch_size`, and `max_latency_ms` are all first-class parameters alongside routing. Most ML serving frameworks treat batching as an afterthought; here, it's a decorator argument.\n\nThe design of `input_spec` and `output_spec` (lines 65-66) is deliberately optional. When omitted, BentoML auto-infers them from your function's type annotations — we'll see how in a later chapter. When provided, they let you explicitly control serialization with Pydantic models.\n\nLines 93-98 build a params dictionary that only includes explicitly provided values. This lets the `APIMethod` constructor apply its own sensible defaults (like deriving the route from the function name) for anything the user doesn't specify. The wrapper on line 105 creates an `APIMethod` descriptor — the central abstraction that connects a Python function to the HTTP serving layer."
+    },
+    {
+      "id": "chapter-3",
+      "label": "APIMethod Descriptor",
+      "snippets": [
+        {
+          "filePath": "src/_bentoml_sdk/method.py",
+          "startLine": 53,
+          "endLine": 69,
+          "content": "@attrs.define\nclass APIMethod(t.Generic[P, R]):\n    func: t.Callable[t.Concatenate[t.Any, P], R]\n    route: str = attrs.field(validator=_starts_with_slash)\n    name: str = attrs.field(init=False)\n    input_spec: type[IODescriptor] = attrs.field(converter=_io_descriptor_converter)\n    output_spec: type[IODescriptor] = attrs.field(converter=_io_descriptor_converter)\n    batchable: bool = False\n    batch_dim: tuple[int, int] = attrs.field(\n        default=(0, 0), converter=lambda x: (x, x) if not isinstance(x, tuple) else x\n    )\n    max_batch_size: int = attrs.field(default=100, validator=attrs.validators.gt(1))\n    max_latency_ms: int = 60000\n    is_stream: bool = attrs.field(init=False)\n    doc: str | None = attrs.field(init=False)\n    ctx_param: str | None = attrs.field(init=False)\n    is_task: bool = False"
+        },
+        {
+          "filePath": "src/_bentoml_sdk/method.py",
+          "startLine": 115,
+          "endLine": 132,
+          "content": "    @route.default\n    def default_route(self) -> str:\n        if self.func.__name__ == \"__call__\":\n            return \"/\"\n        return f\"/{self.func.__name__}\"\n\n    @input_spec.default\n    def default_input_spec(self) -> type[IODescriptor]:\n        ctx_param = self.default_ctx_param()\n        return IODescriptor.from_input(\n            self.func,\n            skip_self=True,\n            skip_names=(ctx_param,) if ctx_param else (),\n        )\n\n    @output_spec.default\n    def default_output_spec(self) -> type[IODescriptor]:\n        return IODescriptor.from_output(self.func)"
+        },
+        {
+          "filePath": "src/_bentoml_sdk/method.py",
+          "startLine": 144,
+          "endLine": 155,
+          "content": "    def __get__(self: T, instance: t.Any, owner: type) -> t.Callable[P, R] | T:\n        if instance is None:\n            return self\n\n        local_caller = self._local_call(instance)\n\n        if proxy := getattr(instance, \"__self_proxy__\", None):\n            func = getattr(proxy, self.name)\n        else:\n            func = local_caller\n        func.local = local_caller  # type: ignore[attr-defined]\n        return func"
+        }
+      ],
+      "explanation": "`APIMethod` is the heart of BentoML's API system. The first snippet shows its `attrs` definition — notice how `batch_dim` on line 62 uses a clever converter to normalize a single `int` into a `(input_dim, output_dim)` tuple. The `is_stream` and `ctx_param` fields (lines 66-68) are `init=False`, meaning they're auto-detected from the function rather than configured.\n\nThe second snippet shows the zero-configuration magic. `default_route` (line 116) derives the URL path from the function name — a method named `predict` becomes `/predict`. More importantly, `default_input_spec` on line 122 calls `IODescriptor.from_input()`, which introspects the function's type annotations to auto-generate a Pydantic model. This means `def predict(self, text: str) -> dict` automatically gets a JSON input schema without any explicit specification.\n\nThe `__get__` descriptor in the third snippet is how method calls are transparently routed. When accessed on a class (line 145, `instance is None`), it returns the descriptor itself. When accessed on an instance, it checks for a `__self_proxy__` (line 150) — a remote proxy that routes calls over HTTP in multi-service deployments. The `local` attribute on line 154 always provides direct access to the actual function, which the batching layer uses."
+    },
+    {
+      "id": "chapter-4",
+      "label": "Pydantic-Powered I/O",
+      "snippets": [
+        {
+          "filePath": "src/_bentoml_sdk/io_models.py",
+          "startLine": 335,
+          "endLine": 386,
+          "content": "class IODescriptor(IOMixin, BaseModel):\n    @classmethod\n    def from_input(\n        cls,\n        func: t.Callable[..., t.Any],\n        *,\n        skip_self: bool = False,\n        skip_names: t.Container[str] = (),\n    ) -> type[IODescriptor]:\n        try:\n            module = sys.modules[func.__module__]\n        except KeyError:\n            global_ns = None\n        else:\n            global_ns = module.__dict__\n        signature = inspect.signature(func)\n\n        fields: dict[str, tuple[str, t.Any]] = {}\n        parameter_tuples = iter(signature.parameters.items())\n        if skip_self:\n            next(parameter_tuples)\n        positional_only_param: t.Any = None\n        positional_only_default: t.Any = signature.empty\n        for name, param in parameter_tuples:\n            if name in skip_names:\n                # Reserved name for context object passed in\n                continue\n            annotation = param.annotation\n            if annotation is param.empty:\n                annotation = t.Any\n            else:\n                annotation = eval_type_lenient(annotation, global_ns, None)\n            if param.kind == param.POSITIONAL_ONLY:\n                if positional_only_param is None:\n                    positional_only_param = annotation\n                    positional_only_default = param.default\n                    continue\n\n            if positional_only_param is not None:\n                raise TypeError(\n                    \"When positional-only argument is used, no other parameters can be specified\"\n                )\n            if param.kind == param.VAR_KEYWORD:\n                name = KWARGS\n                annotation = t.Dict[str, t.Any]\n            elif param.kind == param.VAR_POSITIONAL:\n                name = ARGS\n                annotation = t.List[annotation]\n            default = param.default\n            if default is param.empty:\n                default = Field()\n            fields[name] = (annotation, default)"
+        },
+        {
+          "filePath": "src/_bentoml_sdk/io_models.py",
+          "startLine": 406,
+          "endLine": 416,
+          "content": "            return t.cast(\n                t.Type[IODescriptor],\n                create_model(\n                    \"Input\", __module__=func.__module__, __base__=IODescriptor, **fields\n                ),  # type: ignore\n            )\n        except (ValueError, TypeError) as e:\n            raise TypeError(\n                f\"Unable to infer the input spec for function {func}, \"\n                \"please specify input_spec manually\"\n            ) from e"
+        }
+      ],
+      "explanation": "`IODescriptor.from_input` is where BentoML's zero-configuration I/O works its magic. It uses `inspect.signature` (line 350) to extract every parameter from your function, then builds a Pydantic model field for each one.\n\nThe loop starting at line 358 walks through each parameter, resolving type annotations via `eval_type_lenient` (line 366) — a Pydantic utility that handles forward references and string annotations gracefully. Lines 363-364 show a pragmatic default: if you don't annotate a parameter, it becomes `t.Any`, so untyped functions still work.\n\nSpecial parameter kinds get special treatment: `**kwargs` becomes a `Dict[str, Any]` field (line 379), and `*args` becomes a `List` (line 382). Parameters with no default get a bare `Field()` (line 385), making them required in the generated schema.\n\nThe payoff is on lines 406-411 in the second snippet: Pydantic's `create_model` dynamically constructs a model class from the collected fields. The result is a fully functional Pydantic `BaseModel` subclass with JSON Schema, validation, and serialization — all inferred from your function's type hints. This is why teams don't need to write request/response schemas by hand."
+    },
+    {
+      "id": "chapter-5",
+      "label": "Service Composition",
+      "snippets": [
+        {
+          "filePath": "src/_bentoml_sdk/service/dependency.py",
+          "startLine": 30,
+          "endLine": 36,
+          "content": "@attrs.define\nclass Dependency(t.Generic[T]):\n    on: Service[T] | None = None\n    deployment: str | None = None\n    cluster: str | None = None\n    url: str | None = None\n    _resolved: t.Any = attrs.field(default=None, init=False)"
+        },
+        {
+          "filePath": "src/_bentoml_sdk/service/dependency.py",
+          "startLine": 94,
+          "endLine": 102,
+          "content": "    def __get__(\n        self: Dependency[T], instance: t.Any, owner: t.Any\n    ) -> Dependency[T] | RemoteProxy[t.Any] | T:\n        if instance is None:\n            return self\n        if self._resolved is None:\n            self._resolved = self.get()\n            _dependencies.append(self)\n        return self._resolved"
+        }
+      ],
+      "explanation": "`Dependency` enables microservice architectures — a service can depend on another via `svc_a = bentoml.depends(ServiceA)` as a class attribute. The class on lines 30-36 accepts three resolution strategies: `on` (a local service), `deployment` (a BentoCloud deployment), or `url` (a raw HTTP address).\n\nThe `__get__` descriptor on lines 94-102 makes resolution transparent. On first access (line 99), it calls `self.get()` which either instantiates locally or creates a `RemoteProxy`. The result is cached and tracked for cleanup on shutdown."
+    },
+    {
+      "id": "chapter-6",
+      "label": "Request Pipeline",
+      "snippets": [
+        {
+          "filePath": "src/_bentoml_impl/server/app.py",
+          "startLine": 117,
+          "endLine": 135,
+          "content": "        self.dispatchers: dict[str, CorkDispatcher[t.Any, t.Any]] = {}\n        self._service_instance: t.Any | None = None\n        self._limiter: anyio.CapacityLimiter | None = None\n\n        def fallback() -> t.NoReturn:\n            raise ServiceUnavailable(\"process is overloaded\")\n\n        for name, method in service.apis.items():\n            if not method.batchable:\n                continue\n            self.dispatchers[name] = CorkDispatcher(\n                max_latency_in_ms=method.max_latency_ms,\n                max_batch_size=method.max_batch_size,\n                fallback=fallback,\n                get_batch_size=functools.partial(\n                    AutoContainer.get_batch_size, batch_dim=method.batch_dim[0]\n                ),\n                batch_dim=method.batch_dim,\n            )"
+        },
+        {
+          "filePath": "src/_bentoml_impl/server/app.py",
+          "startLine": 781,
+          "endLine": 826,
+          "content": "        method = self.service.apis[name]\n        func = getattr(self._service_instance, name).local\n        ctx = self.service.context\n        serde = ALL_SERDE.get(media_type, ALL_SERDE[\"application/json\"])()\n        input_data = await method.input_spec.from_http_request(request, serde)\n        call_args: tuple[t.Any, ...] = ()\n        call_kwargs: dict[str, t.Any] = {}\n        if getattr(method.input_spec, \"__root_input__\", False):\n            if isinstance(input_data, IORootModel):\n                call_args = t.cast(t.Tuple[t.Any], (input_data.root,))\n            else:\n                call_args = (input_data,)\n        else:\n            call_kwargs = {k: getattr(input_data, k) for k in input_data.model_fields}\n        if method.ctx_param is not None:\n            call_kwargs[method.ctx_param] = ctx\n        if ARGS in call_kwargs:\n            call_args = (*call_args, call_kwargs.pop(ARGS))\n        if KWARGS in call_kwargs:\n            call_kwargs.update(call_kwargs.pop(KWARGS))\n\n        original_func = get_original_func(func)\n\n        if method.batchable:\n            output = await self.batch_infer(name, call_args, call_kwargs)\n        elif inspect.iscoroutinefunction(original_func):\n            output = await func(*call_args, **call_kwargs)\n        elif inspect.isasyncgenfunction(original_func):\n            output = func(*call_args, **call_kwargs)\n        elif inspect.isgeneratorfunction(original_func):\n\n            async def inner() -> t.AsyncGenerator[t.Any, None]:\n                gen = func(*call_args, **call_kwargs)\n                while True:\n                    try:\n                        yield await self._to_thread(next, gen)\n                    except StopIteration:\n                        break\n                    except RuntimeError as e:\n                        if \"StopIteration\" in str(e):\n                            break\n                        raise\n\n            output = inner()\n        else:\n            output = await self._to_thread(func, *call_args, **call_kwargs)"
+        }
+      ],
+      "explanation": "With the service definition building blocks in place, let's see how they come alive at runtime. `ServiceAppFactory` is the Starlette ASGI application that processes inference requests. The first snippet shows its initialization — for each batchable API method, it creates a `CorkDispatcher` (lines 127-135) configured with the method's max latency and batch size. The `fallback` function on line 121 returns a 503 immediately when the system is overloaded, rather than letting requests queue indefinitely.\n\nThe second snippet shows `api_endpoint`, the method that handles every incoming request. Line 785 deserializes the HTTP request into a Pydantic model using the auto-generated `input_spec`. Lines 788-800 then unpack the model back into function arguments — handling root inputs, keyword arguments, context injection, and variadic args.\n\nThe dispatch logic starting at line 804 is the routing core. Five paths are supported: batchable methods go through `batch_infer` (which feeds them to the CorkDispatcher), async coroutines are awaited directly, async generators become streaming responses, sync generators are wrapped with `_to_thread` to avoid blocking the event loop, and plain sync functions are also offloaded to a thread pool. This branching means users can write their inference function however they want — sync, async, or streaming — and BentoML handles the concurrency model correctly."
+    },
+    {
+      "id": "chapter-7",
+      "label": "Adaptive Batching",
+      "snippets": [
+        {
+          "filePath": "src/bentoml/_internal/marshal/dispatcher.py",
+          "startLine": 38,
+          "endLine": 61,
+          "content": "class Optimizer:\n    \"\"\"\n    Analyse historical data to optimize CorkDispatcher.\n    \"\"\"\n\n    N_KEPT_SAMPLE = 50  # amount of outbound info kept for inferring params\n    N_SKIPPED_SAMPLE = 2  # amount of outbound info skipped after init\n    INTERVAL_REFRESH_PARAMS = 5  # seconds between each params refreshing\n\n    def __init__(self, max_latency: float):\n        \"\"\"\n        assume the outbound duration follows duration = o_a * n + o_b\n        (all in seconds)\n        \"\"\"\n        self.o_stat: collections.deque[tuple[int, float, float]] = collections.deque(\n            maxlen=self.N_KEPT_SAMPLE\n        )  # to store outbound stat data\n        self.o_a = min(2, max_latency * 2.0 / 30)\n        self.o_b = min(1, max_latency * 1.0 / 30)\n\n        self.wait = 0  # the avg wait time before outbound called\n\n        self._refresh_tb = TokenBucket(2)  # to limit params refresh interval\n        self.outbound_counter = 0"
+        },
+        {
+          "filePath": "src/bentoml/_internal/marshal/dispatcher.py",
+          "startLine": 286,
+          "endLine": 325,
+          "content": "        while True:\n            try:\n                async with self._wake_event:  # block until there's any request in queue\n                    await self._wake_event.wait_for(self._queue.__len__)\n\n                n = len(self._queue)\n                dt = self.TICKET_INTERVAL\n                decay = 0.95  # the decay rate of wait time\n                now = time.time()\n                # the wait time of the first request\n                w0 = now - self._queue[0].enqueue_time\n                # the wait time of the last request\n                wn = now - self._queue[-1].enqueue_time\n                a = self.optimizer.o_a\n                b = self.optimizer.o_b\n\n                # the estimated latency of the first request if we began processing now\n                latency_0 = w0 + a * n + b\n\n                if n > 1 and latency_0 >= self.max_latency:\n                    self._queue.popleft().future.cancel()\n                    continue\n                if self._sema.is_locked():\n                    if n == 1 and w0 >= self.max_latency:\n                        self._queue.popleft().future.cancel()\n                        continue\n                    await asyncio.sleep(self.TICKET_INTERVAL)\n                    continue\n                if (\n                    n < self.max_batch_size\n                    and n * (wn + dt + (a or 0)) <= self.optimizer.wait * decay\n                ):\n                    await asyncio.sleep(self.TICKET_INTERVAL)\n                    continue\n                # call\n                self._sema.acquire()\n                inputs_info = tuple(self._get_inputs())\n                self._loop.create_task(self.outbound_call(inputs_info))\n            except Exception:\n                logger.exception(\"Error processing batch requests\")"
+        }
+      ],
+      "explanation": "Adaptive batching is arguably BentoML's most important feature for inference performance, and this is the code that makes it work. The `Optimizer` class models inference latency as a linear function: `duration = o_a * n + o_b`, where `n` is batch size, `o_a` is the per-item cost, and `o_b` is the fixed overhead (line 49). It learns these coefficients from runtime data using numpy's least-squares regression (in its `trigger_refresh` method, not shown here), keeping the last 50 observations in a deque (line 52). Initial values on lines 55-56 are conservative estimates derived from the user's `max_latency` setting. Parameters refresh every 5 seconds (line 45), so the system adapts to changing load patterns.\n\nThe controller loop in the second snippet is the dispatch decision engine. Each iteration wakes when the request queue is non-empty (line 289), then computes the estimated end-to-end latency for the oldest request: `latency_0 = w0 + a * n + b` (line 303), where `w0` is how long the first request has already waited. Three outcomes follow:\n\n1. **Timeout eviction** (line 305): If the oldest request would exceed `max_latency` even with immediate processing, it's cancelled rather than blocking others.\n2. **Wait for more** (lines 314-319): If the batch isn't full and the projected benefit of waiting (accumulating more items) exceeds the cost (longer wait for existing items), the dispatcher sleeps for 1ms. The `decay` factor of 0.95 on line 316 gradually reduces the wait threshold, creating urgency over time.\n3. **Dispatch** (lines 321-323): When waiting no longer pays off, the semaphore is acquired and the batch is released via `outbound_call`.\n\nThis is why teams see dramatic GPU utilization improvements with BentoML — instead of processing requests one at a time, the system automatically groups them into batches that saturate the hardware, while still honoring latency constraints. The linear model is surprisingly effective because GPU inference really does follow an approximately linear cost curve within typical batch size ranges."
+    },
+    {
+      "id": "chapter-8",
+      "label": "Production Serving",
+      "snippets": [
+        {
+          "filePath": "src/_bentoml_impl/server/serving.py",
+          "startLine": 347,
+          "endLine": 401,
+          "content": "        watchers.append(\n            create_watcher(\n                name=\"service\",\n                cmd=server_cmd,\n                args=server_args,\n                working_dir=str(bento_path.absolute()),\n                numprocesses=num_workers,\n                close_child_stdin=not development_mode,\n                env={k: str(v) for k, v in env.items()},\n            )\n        )\n\n        log_host = \"localhost\" if host in [\"0.0.0.0\", \"::\"] else host\n        dependency_map[svc.name] = f\"{scheme}://{log_host}:{port}\"\n\n        # inject runner map now\n        inject_env = {\"BENTOML_RUNNER_MAP\": json.dumps(dependency_map)}\n        for watcher in watchers:\n            if watcher.env is None:\n                watcher.env = inject_env\n            else:\n                watcher.env.update(inject_env)\n\n        arbiter_kwargs: dict[str, t.Any] = {\n            \"watchers\": watchers,\n            \"sockets\": sockets,\n            \"threaded\": threaded,\n        }\n\n        if reload:\n            reload_plugin = make_reload_plugin(str(bento_path.absolute()), bentoml_home)\n            arbiter_kwargs[\"plugins\"] = [reload_plugin]\n\n        if development_mode:\n            arbiter_kwargs[\"debug\"] = True\n            arbiter_kwargs[\"loggerconfig\"] = SERVER_LOGGING_CONFIG\n\n        arbiter = create_standalone_arbiter(**arbiter_kwargs)\n        arbiter.exit_stack.enter_context(\n            track_serve(svc, production=not development_mode)\n        )\n        arbiter.exit_stack.callback(shutil.rmtree, uds_path, ignore_errors=True)\n        arbiter.start(\n            cb=lambda _: logger.info(  # type: ignore\n                'Starting production %s BentoServer from \"%s\" listening on %s://%s:%d (Press CTRL+C to quit)',\n                scheme.upper(),\n                bento_identifier,\n                scheme,\n                log_host,\n                port,\n            )\n            if not svc.has_custom_command()\n            else None,\n        )\n        return Server(url=f\"{scheme}://{log_host}:{port}\", arbiter=arbiter)"
+        }
+      ],
+      "explanation": "BentoML uses Circus, a mature process manager from Mozilla, to orchestrate production serving. This snippet shows the final assembly of the `serve_http` function.\n\nLine 348 creates a \"watcher\" — Circus's abstraction for a managed process group. `numprocesses=num_workers` (line 353) spawns multiple uvicorn workers, each running an independent ASGI application. The `BENTOML_RUNNER_MAP` on line 363 is the glue for multi-service communication — a JSON-encoded dictionary mapping service names to their addresses (TCP ports or Unix Domain Sockets). Every worker gets this map injected, so `RemoteProxy` knows where to route inter-service calls.\n\nLines 384-401 create and start the Circus arbiter — the master process that supervises all watchers, handles crashes with automatic restarts, and supports reload plugins for development (line 377)."
+    },
+    {
+      "id": "chapter-9",
+      "label": "GPU Allocation",
+      "snippets": [
+        {
+          "filePath": "src/_bentoml_impl/server/allocator.py",
+          "startLine": 19,
+          "endLine": 27,
+          "content": "class ResourceAllocator:\n    def __init__(self) -> None:\n        self.system_resources = system_resources()\n        self.remaining_gpus = len(self.system_resources[NVIDIA_GPU])\n        self._available_gpus: list[tuple[float, float]] = [\n            (1.0, 1.0)  # each item is (remaining, unit)\n            for _ in range(self.remaining_gpus)\n        ]"
+        },
+        {
+          "filePath": "src/_bentoml_impl/server/allocator.py",
+          "startLine": 91,
+          "endLine": 115,
+          "content": "    @inject\n    def get_worker_env(\n        self,\n        service: Service[Any],\n        services: dict[str, Any] = Provide[BentoMLContainer.config.services],\n    ) -> tuple[int, dict[str, str]]:\n        config = services[service.name]\n\n        num_gpus = 0\n        num_workers = 1\n        worker_env: dict[str, str] = {}\n        if \"gpu\" in (config.get(\"resources\") or {}):\n            num_gpus = config[\"resources\"][\"gpu\"]  # type: ignore\n        if config.get(\"workers\"):\n            if (workers := config[\"workers\"]) == \"cpu_count\":\n                num_workers = int(self.system_resources[\"cpu\"]) or 1\n                # don't assign gpus to workers\n                return num_workers, worker_env\n            else:  # workers is a number\n                num_workers = workers\n        if num_gpus and not self.gpu_allocation_disabled():\n            assigned = self.assign_gpus(num_gpus)\n            # assign gpus to all workers\n            worker_env[\"CUDA_VISIBLE_DEVICES\"] = \",\".join(map(str, assigned))\n        return num_workers, worker_env"
+        }
+      ],
+      "explanation": "`ResourceAllocator` removes the headache of manual `CUDA_VISIBLE_DEVICES` management. The constructor (lines 20-26) detects available GPUs and tracks each as a `(remaining_capacity, unit_size)` tuple, enabling fractional GPU sharing between services.\n\n`get_worker_env` (lines 91-115) reads GPU requirements from the service config, determines worker count, and calls `assign_gpus` to claim specific GPU indices. The result is injected as `CUDA_VISIBLE_DEVICES` on line 114, so each worker only sees its assigned hardware."
+    },
+    {
+      "id": "chapter-10",
+      "label": "Service Config",
+      "snippets": [
+        {
+          "filePath": "src/_bentoml_sdk/service/config.py",
+          "startLine": 57,
+          "endLine": 63,
+          "content": "class TrafficSchema(TypedDict, total=False):\n    timeout: Posfloat\n    # concurrent request will be rejected if it exceeds this limit\n    max_concurrency: Posint\n    concurrency: Posint  # capabilty of handling concurrent request\n    external_queue: bool  # bentocloud only, if set to true, bentocloud will use external queue to handle request"
+        },
+        {
+          "filePath": "src/_bentoml_sdk/service/config.py",
+          "startLine": 256,
+          "endLine": 281,
+          "content": "class ServiceConfig(TypedDict, total=False):\n    \"\"\"\n    service level (per replica) config\n    \"\"\"\n\n    traffic: TrafficSchema\n    extra_ports: list[int]\n    backlog: Annotated[int, Ge(64)]\n    max_runner_connections: Posint\n    runner_connection: RunnerConnectionSchema\n    resources: ResourceSchema\n    workers: WorkerSchema\n    replicate_process: bool\n    threads: Posint\n    metrics: MetricSchema\n    logging: LoggingSchema\n    ssl: SSLSchema\n    http: HTTPSchema\n    grpc: GRPCSchema\n    runner_probe: RunnerProbeSchema\n    tracing: TracingSchema\n    monitoring: MonitoringSchema\n    endpoints: EndpointsSchema\n\n\nschema_type = TypeAdapter(ServiceConfig)\n\n\ndef validate(data: ServiceConfig) -> ServiceConfig:\n    return schema_type.validate_python(data)"
+        }
+      ],
+      "explanation": "Every production knob is exposed through `ServiceConfig`, a deeply-typed TypedDict. `TrafficSchema` (lines 57-62) controls timeouts, concurrency limits, and external queue support. The full `ServiceConfig` (lines 256-278) covers resources, observability, networking, and deployment — all optional with sensible defaults via `total=False`. Line 280 wraps it in a Pydantic `TypeAdapter` so typos like `timeut: 60` fail early."
+    },
+    {
+      "id": "chapter-11",
+      "label": "Container Images",
+      "snippets": [
+        {
+          "filePath": "src/_bentoml_sdk/images.py",
+          "startLine": 42,
+          "endLine": 53,
+          "content": "@attrs.define\nclass Image:\n    \"\"\"A class defining the environment requirements for bento.\"\"\"\n\n    base_image: str = \"\"\n    distro: str = \"debian\"\n    python_version: str = DEFAULT_PYTHON_VERSION\n    commands: t.List[str] = attrs.field(factory=list)\n    lock_python_packages: bool = True\n    pack_git_packages: bool = True\n    python_requirements: str = \"\"\n    post_commands: t.List[str] = attrs.field(factory=list)"
+        },
+        {
+          "filePath": "src/_bentoml_sdk/images.py",
+          "startLine": 129,
+          "endLine": 159,
+          "content": "    def python_packages(self, *packages: str) -> t.Self:\n        \"\"\"Add python dependencies to the image. Supports chaining call.\n\n        Example:\n\n        .. code-block:: python\n\n            image = Image(\"debian:latest\")\\\n                .python_packages(\"numpy\", \"pandas\")\\\n                .requirements_file(\"requirements.txt\")\n        \"\"\"\n        if self.post_commands:\n            raise BentoMLConfigException(\"Can't separate adding python requirements\")\n        if not packages:\n            raise BentoMLConfigException(\"No packages provided\")\n        self.python_requirements += \"\\n\".join(packages) + \"\\n\"\n        self._after_pip_install = True\n        return self\n\n    def run(self, command: str) -> t.Self:\n        \"\"\"Add a command to the image. Supports chaining call.\n\n        Example:\n\n        .. code-block:: python\n\n            image = Image(\"debian:latest\").run(\"echo 'Hello, World!'\")\n        \"\"\"\n        commands = self.post_commands if self._after_pip_install else self.commands\n        commands.append(command)\n        return self"
+        }
+      ],
+      "explanation": "Rather than hand-writing Dockerfiles, BentoML offers `Image` — a chainable Python API for container environments. The class (lines 42-53) defaults to Debian with automatic package locking. Commands split into `commands` (pre-pip) and `post_commands` (post-pip) for precise layer ordering.\n\n`python_packages` (line 129) returns `self` for fluent chaining: `Image(\"debian:latest\").python_packages(\"numpy\").run(\"setup.sh\")`. The `run` method (line 148) uses `_after_pip_install` to route commands to the correct layer. At build time, `Image.freeze()` locks dependencies with `uv pip compile` and generates the Dockerfile."
+    },
+    {
+      "id": "chapter-12",
+      "label": "Bento Package",
+      "snippets": [
+        {
+          "filePath": "src/bentoml/_internal/bento/bento.py",
+          "startLine": 137,
+          "endLine": 166,
+          "content": "@attr.define(repr=False)\nclass Bento(StoreItem):\n    _tag: Tag\n    _path: Path = attr.field(converter=Path)\n    _info: BaseBentoInfo\n\n    _model_store: ModelStore | None = attr.field(init=False)\n\n    @staticmethod\n    def _export_ext() -> str:\n        return \"bento\"\n\n    @_model_store.default  # type: ignore # attrs default not supported by pyright\n    def _internal_store(self) -> ModelStore | None:\n        if self._path.joinpath(\"models\").exists():\n            return ModelStore(self._path.joinpath(\"models\"))\n        return None\n\n    @property\n    def tag(self) -> Tag:\n        return self._tag\n\n    @property\n    def info(self) -> BaseBentoInfo:\n        return self._info\n\n    @property\n    def entry_service(self) -> str:\n        return self.info.entry_service"
+        },
+        {
+          "filePath": "src/bentoml/_internal/bento/bento.py",
+          "startLine": 458,
+          "endLine": 469,
+          "content": "        res = cls(tag, bento_fs, bento_info)\n        weakref.finalize(res, safe_remove_dir, bento_fs)\n        if bare:\n            return res\n        # Create bento.yaml\n        res.flush_info()\n        try:\n            res.validate()\n        except BentoMLException as e:\n            raise BentoMLException(f\"Failed to create {res!s}: {e}\") from None\n\n        return res"
+        }
+      ],
+      "explanation": "A `Bento` is the final deployment artifact — an immutable, versioned package. The class (lines 137-166) extends `StoreItem` with a `Tag` (name + version), a filesystem path, and a `BaseBentoInfo` manifest. The `_model_store` on line 143 lazily creates a `ModelStore` if bundled models exist.\n\nThe second snippet shows the tail of `Bento.create()`. Line 459 registers a `weakref.finalize` to clean up temporary files. Line 463 writes the `bento.yaml` manifest, and line 465 validates. Between these snippets (not shown), `create()` copies source files, resolves models, generates Dockerfiles, and writes OpenAPI specs — a complete pipeline from decorated class to deployable container."
+    },
+    {
+      "id": "chapter-13",
+      "label": "Summary",
+      "snippets": [],
+      "explanation": "We've traced the full BentoML stack from a `@service` decorator on a Python class all the way to a production-ready container artifact. The key insight is that BentoML is designed around a single philosophy: **ML inference has unique requirements, and the framework should handle them so you don't have to.**\n\nThe decorator layer (`@service`, `@api`, `APIMethod`) provides a Flask-like developer experience where type annotations become API contracts automatically through Pydantic-powered `IODescriptor` inference. The `Dependency` descriptor enables service composition without configuration files.\n\nAt runtime, `ServiceAppFactory` creates a Starlette ASGI application that handles the five calling conventions ML code actually uses — sync, async, streaming, generator, and batched. The `CorkDispatcher` and its `Optimizer` are the crown jewel: they learn a linear latency model from live traffic and dynamically decide when to release batches, maximizing GPU utilization within user-defined latency constraints.\n\nFor production, Circus orchestrates multi-process serving with automatic GPU assignment via `ResourceAllocator`, while `ServiceConfig` exposes every tuning knob through typed configuration with Pydantic validation. The `Image` class and `Bento.create()` provide a complete packaging story — from Python class to locked, containerized artifact.\n\nThis is why teams choose BentoML for inference: it removes the operational complexity of serving ML models at scale while giving them precise control when they need it."
+    }
+  ]
+}

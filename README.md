@@ -4,9 +4,10 @@ Understand code through narrative-driven stories. Ask a question about any codeb
 
 Sample stories:
 - [How Code Stories Works: From Query to Interactive Tour](https://charleslow.github.io/code-stories/?url=https://raw.githubusercontent.com/charleslow/code-stories/main/sample_stories/code-stories-how-it-works.json)
+- [Inside BentoML: From Decorators to Production Inference](https://charleslow.github.io/code-stories/?url=https://raw.githubusercontent.com/charleslow/code-stories/main/sample_stories/bentoml.json)
 - [One API, Many Frameworks: How Einops Achieves Framework Independence](https://charleslow.github.io/code-stories/?url=https://raw.githubusercontent.com/charleslow/code-stories/main/sample_stories/einops.json)
 - [nanoGPT: A Language Model from Scratch](https://charleslow.github.io/code-stories/?url=https://raw.githubusercontent.com/charleslow/code-stories/main/sample_stories/nanogpt.json)
-- [Security Gotchas of OpenClaw](https://charleslow.github.io/code-stories/?url=https://raw.githubusercontent.com/charleslow/code-stories/main/sample_stories/openclaw.json)
+- [The Design of OpenClaw: A Personal AI Gateway](https://charleslow.github.io/code-stories/?url=https://raw.githubusercontent.com/charleslow/code-stories/main/sample_stories/openclaw.json)
 
 ## Requirements
 
