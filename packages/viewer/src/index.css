@@ -230,10 +230,12 @@ body {
   color: var(--accent-muted);
 }
 
+.local-stories,
 .recent-stories {
   margin-top: 3rem;
 }
 
+.local-stories h2,
 .recent-stories h2 {
   font-size: 1.25rem;
   margin-bottom: 1rem;
@@ -241,14 +243,17 @@ body {
   font-weight: 500;
 }
 
+.local-stories ul,
 .recent-stories ul {
   list-style: none;
 }
 
+.local-stories li,
 .recent-stories li {
   margin-bottom: 0.75rem;
 }
 
+.local-stories button,
 .recent-stories button {
   width: 100%;
   padding: 1.25rem;
@@ -261,17 +266,20 @@ body {
   transition: all 0.3s ease;
 }
 
+.local-stories button:hover,
 .recent-stories button:hover {
   border-color: var(--accent-border);
   background: var(--accent-surface);
   transform: translateX(4px);
 }
 
+.local-stories .story-title,
 .recent-stories .story-title {
   display: block;
   font-weight: 500;
 }
 
+.local-stories .story-meta,
 .recent-stories .story-meta {
   display: block;
   font-size: 0.875rem;

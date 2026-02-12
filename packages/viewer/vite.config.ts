@@ -14,6 +14,31 @@ export default defineConfig({
       configureServer(server) {
         server.middlewares.use('/local-stories', (req, res, next) => {
           const storiesDir = path.resolve(__dirname, '../../stories')
+
+          // Discovery endpoint: list all stories
+          if (req.url === '/_discover') {
+            try {
+              const files = fs.readdirSync(storiesDir).filter(f => f.endsWith('.json') && f !== 'manifest.json')
+              const stories = files.map(f => {
+                try {
+                  const data = JSON.parse(fs.readFileSync(path.join(storiesDir, f), 'utf-8'))
+                  return {
+                    id: data.id || f.replace('.json', ''),
+                    title: data.title || f.replace('.json', ''),
+                    createdAt: data.createdAt || null,
+                    url: `/local-stories/${f}`,
+                  }
+                } catch { return null }
+              }).filter(Boolean)
+              res.setHeader('Content-Type', 'application/json')
+              res.end(JSON.stringify(stories))
+            } catch {
+              res.setHeader('Content-Type', 'application/json')
+              res.end('[]')
+            }
+            return
+          }
+
           const filePath = path.join(storiesDir, req.url || '')
 
           // Security: ensure we're still within stories dir and it's a JSON file

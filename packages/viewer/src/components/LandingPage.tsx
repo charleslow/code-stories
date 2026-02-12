@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { RecentStory } from '../services/api';
+import { fetchLocalStories, type LocalStory } from '../services/api';
 
 interface LandingPageProps {
   recentStories: RecentStory[];
@@ -8,6 +9,11 @@ interface LandingPageProps {
 
 export function LandingPage({ recentStories, onLoadStory }: LandingPageProps) {
   const [urlInput, setUrlInput] = useState('');
+  const [localStories, setLocalStories] = useState<LocalStory[]>([]);
+
+  useEffect(() => {
+    fetchLocalStories().then(setLocalStories);
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,6 +65,26 @@ export function LandingPage({ recentStories, onLoadStory }: LandingPageProps) {
           <li><code>{'<user>/<repo>/<story-id>'}</code> - GitHub shorthand (main branch, stories/ folder)</li>
         </ul>
       </div>
+
+      {localStories.length > 0 && (
+        <div className="local-stories">
+          <h2>Local Stories</h2>
+          <ul>
+            {localStories.map((story) => (
+              <li key={story.id}>
+                <button onClick={() => onLoadStory(story.url)}>
+                  <span className="story-title">{story.title}</span>
+                  {story.createdAt && (
+                    <span className="story-meta">
+                      {new Date(story.createdAt).toLocaleDateString()}
+                    </span>
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {recentStories.length > 0 && (
         <div className="recent-stories">

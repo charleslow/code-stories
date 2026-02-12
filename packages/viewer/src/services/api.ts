@@ -160,6 +160,24 @@ export async function fetchManifest(url: string): Promise<StoryManifest> {
   return validateManifest(data);
 }
 
+// Local story discovery (dev mode only)
+export interface LocalStory {
+  id: string;
+  title: string;
+  createdAt: string | null;
+  url: string;
+}
+
+export async function fetchLocalStories(): Promise<LocalStory[]> {
+  try {
+    const res = await fetch('/local-stories/_discover');
+    if (!res.ok) return [];
+    return await res.json();
+  } catch {
+    return [];
+  }
+}
+
 // Local storage helpers for recent stories
 const RECENT_STORIES_KEY = 'code-stories-recent';
 const MAX_RECENT_STORIES = 10;
