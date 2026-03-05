@@ -123,6 +123,7 @@ body {
   max-width: 700px;
   margin: 0 auto;
   padding: 4rem 2rem;
+  overflow-x: hidden;
 }
 
 .landing-page h1 {
@@ -228,6 +229,7 @@ body {
   padding: 0.25em 0.5em;
   border-radius: 4px;
   color: var(--accent-muted);
+  overflow-wrap: anywhere;
 }
 
 .local-stories,
