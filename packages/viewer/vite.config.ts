@@ -6,6 +6,10 @@ import fs from 'fs'
 // https://vite.dev/config/
 export default defineConfig({
   base: '/code-stories/',  // Subpath for GitHub Pages at charleslow.github.io/code-stories/
+  server: {
+    host: '127.0.0.1',
+    allowedHosts: true,
+  },
   plugins: [
     react(),
     // Serve local stories in dev mode at /local-stories/
