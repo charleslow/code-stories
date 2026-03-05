@@ -1,5 +1,32 @@
 // Core data types for Code Stories
 
+export interface PRMetadata {
+  number: number;
+  title: string;
+  description: string;
+  baseBranch: string;
+  headBranch: string;
+  author: string;
+  url: string;
+  labels: string[];
+  comments: PRComment[];
+}
+
+export interface PRComment {
+  author: string;
+  body: string;
+  path?: string;
+  line?: number;
+  createdAt: string;
+}
+
+export interface DiffLine {
+  oldLineNumber: number | null;
+  newLineNumber: number | null;
+  type: 'added' | 'removed' | 'context';
+  content: string;
+}
+
 export interface Story {
   id: string;
   title: string;
@@ -8,6 +35,7 @@ export interface Story {
   commitHash: string;
   createdAt: string;
   chapters: Chapter[];
+  pr?: PRMetadata;
 }
 
 export interface Chapter {
@@ -22,6 +50,8 @@ export interface CodeSnippet {
   startLine: number;
   endLine: number;
   content: string;
+  type?: 'code' | 'diff';
+  lines?: DiffLine[];
 }
 
 // Manifest for tracking all stories

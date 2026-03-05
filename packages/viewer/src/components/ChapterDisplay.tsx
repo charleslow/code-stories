@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
-import type { Chapter } from '../types';
+import type { Chapter, PRMetadata } from '../types';
 import { CodePanel } from './CodePanel';
 import { ExplanationPanel } from './ExplanationPanel';
 
@@ -11,6 +11,7 @@ interface ChapterDisplayProps {
   onNext: () => void;
   storyQuery?: string;
   storyRepo?: string | null;
+  storyPR?: PRMetadata;
 }
 
 const MIN_PANEL_PERCENT = 30;
@@ -29,7 +30,7 @@ function useIsMobile() {
   );
 }
 
-export function ChapterDisplay({ chapter, currentIndex, totalChapters, onPrev, onNext, storyQuery, storyRepo }: ChapterDisplayProps) {
+export function ChapterDisplay({ chapter, currentIndex, totalChapters, onPrev, onNext, storyQuery, storyRepo, storyPR }: ChapterDisplayProps) {
   const isFirst = currentIndex === 0;
   const isLast = currentIndex === totalChapters - 1;
   const isMobile = useIsMobile();
@@ -96,6 +97,7 @@ export function ChapterDisplay({ chapter, currentIndex, totalChapters, onPrev, o
             style={isMobile ? { flex: '1 1 100%' } : { flex: `0 0 ${codePanelPercent}%` }}
             storyQuery={storyQuery}
             storyRepo={storyRepo}
+            storyPR={storyPR}
           />
         )}
         {!isMobile && (

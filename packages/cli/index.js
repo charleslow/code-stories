@@ -8,6 +8,8 @@ import path from 'path';
 import os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 import { buildPrompt } from './prompt.js';
+import { buildPRPrompt } from './prompt-pr.js';
+import { fetchPRData } from './pr.js';
 
 // Configuration (resolved relative to cwd)
 const STORIES_DIR = path.resolve('./stories');
@@ -85,6 +87,44 @@ function cleanupClone(tempDir) {
   }
 }
 
+// Clone a GitHub repo for PR review (full clone, then checkout PR branch)
+function cloneRepoForPR(repo, prNumber, spinner) {
+  const repoId = parseGitHubRepo(repo);
+  const cloneUrl = `https://github.com/${repoId}.git`;
+  const tempDir = path.join(os.tmpdir(), `code-stories-${uuidv4()}`);
+
+  spinner.text = `Cloning ${repoId}...`;
+  try {
+    execFileSync('git', ['clone', cloneUrl, tempDir], {
+      encoding: 'utf-8',
+      stdio: 'pipe',
+      timeout: 120_000,
+    });
+  } catch (e) {
+    if (e.killed) {
+      throw new Error('Git clone timed out after 120 seconds. The repository may be too large or the network is slow.');
+    }
+    throw e;
+  }
+
+  spinner.text = `Checking out PR #${prNumber}...`;
+  try {
+    execFileSync('gh', ['pr', 'checkout', String(prNumber)], {
+      cwd: tempDir,
+      encoding: 'utf-8',
+      stdio: 'pipe',
+      timeout: 60_000,
+    });
+  } catch (e) {
+    if (e.killed) {
+      throw new Error(`PR checkout timed out after 60 seconds.`);
+    }
+    throw e;
+  }
+
+  return { tempDir, repoId };
+}
+
 // Stage definitions for progress tracking
 const STAGES = [
   { file: 'exploration_scan.md', checkpoint: 'EXPLORATION_SCANNED', label: 'Scanning file tree' },
@@ -159,7 +199,7 @@ function updateManifest(storiesDir, entry) {
 
 // Generate a story
 async function generateStory(query, options = {}) {
-  const { cwd = process.cwd(), repoId = null } = options;
+  const { cwd = process.cwd(), repoId = null, prData = null } = options;
 
   ensureDirectories();
 
@@ -168,7 +208,9 @@ async function generateStory(query, options = {}) {
   fs.mkdirSync(generationDir, { recursive: true });
 
   const commitHash = getCommitHash(cwd);
-  const prompt = buildPrompt(query, generationDir, commitHash, generationId, repoId);
+  const prompt = prData
+    ? buildPRPrompt(query, generationDir, commitHash, generationId, repoId, prData)
+    : buildPrompt(query, generationDir, commitHash, generationId, repoId);
 
   console.log('\n  Code Stories Generator\n');
   if (repoId) {
@@ -291,26 +333,62 @@ program
   .name('code-stories')
   .description('Generate narrative-driven code stories using Claude')
   .version('0.1.0')
-  .argument('<query>', 'Question about the codebase to generate a story for')
+  .argument('[query]', 'Question about the codebase to generate a story for')
   .option('-r, --repo <repo>', 'GitHub repository (user/repo or full URL)')
+  .option('--pr <number>', 'PR number to review', parseInt)
   .action(async (query, options) => {
+    if (!query && !options.pr) {
+      console.error('Error: must provide a query or --pr <number>');
+      process.exit(1);
+    }
+
+    // Check gh availability when --pr is used
+    if (options.pr) {
+      try {
+        execFileSync('gh', ['--version'], { stdio: 'pipe' });
+      } catch {
+        console.error('Error: --pr mode requires the GitHub CLI (gh). Install it from https://cli.github.com/');
+        process.exit(1);
+      }
+    }
+
     let repoId = null;
     let exitCode = 0;
+    let prData = null;
 
     const spinner = ora({ prefixText: '  ' });
 
     try {
       if (options.repo) {
         spinner.start();
-        const result = cloneRepo(options.repo, spinner);
-        activeCloneDir = result.tempDir;
-        repoId = result.repoId;
+        if (options.pr) {
+          const result = cloneRepoForPR(options.repo, options.pr, spinner);
+          activeCloneDir = result.tempDir;
+          repoId = result.repoId;
+        } else {
+          const result = cloneRepo(options.repo, spinner);
+          activeCloneDir = result.tempDir;
+          repoId = result.repoId;
+        }
         spinner.stop();
       }
 
+      const cwd = activeCloneDir || process.cwd();
+
+      if (options.pr) {
+        spinner.start('Fetching PR data...');
+        prData = await fetchPRData(options.pr, cwd);
+        spinner.stop();
+
+        if (!query) {
+          query = `Review PR #${prData.metadata.number}: ${prData.metadata.title}`;
+        }
+      }
+
       await generateStory(query, {
-        cwd: activeCloneDir || process.cwd(),
+        cwd,
         repoId,
+        prData,
       });
     } catch (error) {
       spinner.fail(error.message);

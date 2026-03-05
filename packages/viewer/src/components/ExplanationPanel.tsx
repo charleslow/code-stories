@@ -62,8 +62,10 @@ const markdownComponents: Components = {
   blockquote: ({ children }) => {
     const { title, content } = parseCalloutTitle(children);
 
+    const typeClass = title ? `callout-${title.toLowerCase()}` : '';
+
     return (
-      <div className="callout">
+      <div className={`callout ${typeClass}`}>
         {title && <div className="callout-title">{title}</div>}
         {content}
       </div>

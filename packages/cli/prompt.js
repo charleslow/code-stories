@@ -71,8 +71,14 @@ End the file with the line: STAGE_1_COMPLETE
 
 ### Stage 2: Plan the Outline
 
-Design 5-30 chapters (depending on complexity). Each chapter should have ONE clear
-teaching point — a single insight the reader takes away.
+Design 5-30 chapters based on both the codebase complexity AND the user's requested
+depth. If the user asks for a detailed, comprehensive, in-depth, or thorough story,
+target the higher end of the range (20-30 chapters). A "detailed" story should have
+at least 20 chapters — prefer more granular chapters that each cover a focused aspect
+rather than fewer chapters that gloss over details. For standard requests on moderately
+complex codebases, 10-18 chapters is typical. Only use 5-9 chapters for simple
+codebases with narrow queries. Each chapter should have ONE clear teaching point — a
+single insight the reader takes away.
 
 Guidelines:
 - Start with an overview chapter (no code snippets) that orients the reader

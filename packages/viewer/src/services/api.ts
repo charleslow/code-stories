@@ -39,6 +39,12 @@ function validateStory(data: unknown): Story {
       if (typeof sn.startLine !== 'number') throw new Error(`Invalid story: chapter ${i} snippet ${j} missing 'startLine'`);
       if (typeof sn.endLine !== 'number') throw new Error(`Invalid story: chapter ${i} snippet ${j} missing 'endLine'`);
       if (typeof sn.content !== 'string') throw new Error(`Invalid story: chapter ${i} snippet ${j} missing 'content'`);
+      if (sn.type !== undefined && sn.type !== 'code' && sn.type !== 'diff') {
+        throw new Error(`Invalid story: chapter ${i} snippet ${j} invalid type`);
+      }
+      if (sn.type === 'diff' && !Array.isArray(sn.lines)) {
+        throw new Error(`Invalid story: chapter ${i} snippet ${j} type 'diff' missing lines`);
+      }
     }
   }
 

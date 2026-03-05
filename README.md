@@ -9,11 +9,14 @@ Sample stories:
 - [nanoGPT: A Language Model from Scratch](https://charleslow.github.io/code-stories/?url=https://raw.githubusercontent.com/charleslow/code-stories/main/sample_stories/nanogpt.json)
 - [The Design of OpenClaw: A Personal AI Gateway](https://charleslow.github.io/code-stories/?url=https://raw.githubusercontent.com/charleslow/code-stories/main/sample_stories/openclaw.json)
 
+PR review mode clones the repo, checks out the PR branch, fetches the diff and comments via `gh`, and generates a story that walks through the changes with inline diffs, concerns, and suggestions.
+
 ## Requirements
 
 - Node.js 18+
 - [Claude CLI](https://claude.ai/cli) installed and configured
 - A git repository to analyze
+- [GitHub CLI](https://cli.github.com/) (`gh`) — required for `--pr` mode
 
 ## Quick Start
 
@@ -26,6 +29,9 @@ npx code-stories "How does the authentication flow work?"
 
 # Or analyze a public GitHub repo directly
 npx code-stories --repo user/repo "How does the authentication flow work?"
+
+# Review a pull request (requires gh CLI)
+npx code-stories --repo user/repo --pr 42
 ```
 
 Stories are saved as JSON to `./stories/{id}.json` in your current working directory.

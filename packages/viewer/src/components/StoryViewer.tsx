@@ -51,6 +51,11 @@ export function StoryViewer({ story, onBack }: StoryViewerProps) {
           ← Back
         </button>
         <h1>{story.title}</h1>
+        {story.pr && (
+          <a className="pr-badge-link" href={story.pr.url} target="_blank" rel="noopener noreferrer">
+            PR #{story.pr.number}
+          </a>
+        )}
         <span className="commit-hash" title={story.repo ? `${story.repo} @ ${story.commitHash}` : story.commitHash}>
           {story.repo ? `${story.repo} @ ` : ''}{story.commitHash.slice(0, 7)}
         </span>
@@ -70,6 +75,7 @@ export function StoryViewer({ story, onBack }: StoryViewerProps) {
             onNext={goToNext}
             storyQuery={story.query}
             storyRepo={story.repo}
+            storyPR={story.pr}
           />
         </main>
       </div>
