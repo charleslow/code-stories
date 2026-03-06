@@ -246,10 +246,18 @@ async function generateStory(query, options = {}) {
       '--add-dir', generationDir,
     ], {
       cwd,
-      env: { ...process.env },
+      env: Object.fromEntries(
+        Object.entries(process.env).filter(([k]) => k !== 'CLAUDECODE')
+      ),
     });
 
     // Send prompt via stdin
+    claude.stdin.on('error', (err) => {
+      // Handle EPIPE gracefully - Claude process may have exited early
+      if (err.code !== 'EPIPE') throw err;
+    });
+    let stdout = '';
+    claude.stdout.on('data', (data) => { stdout += data.toString(); }); // Consume stdout
     claude.stdin.write(prompt);
     claude.stdin.end();
 
@@ -302,10 +310,13 @@ async function generateStory(query, options = {}) {
           reject(error);
         }
       } else {
-        spinner.fail('Generation failed - story.json not created');
+        spinner.fail(`Generation failed - story.json not created (exit code: ${code})`);
         console.log(`\n  Check intermediate files in: ${generationDir}\n`);
         if (stderr) {
-          console.log(`  stderr: ${stderr.slice(0, 500)}\n`);
+          console.log(`  stderr: ${stderr.slice(0, 1000)}\n`);
+        }
+        if (stdout) {
+          console.log(`  stdout: ${stdout.slice(0, 1000)}\n`);
         }
         reject(new Error('story.json not created'));
       }
