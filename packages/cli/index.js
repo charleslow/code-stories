@@ -58,7 +58,7 @@ function parseGitHubRepo(repo) {
 // Clone a GitHub repo to a temp directory
 function cloneRepo(repo, spinner) {
   const repoId = parseGitHubRepo(repo);
-  const cloneUrl = `https://github.com/${repoId}.git`;
+  const cloneUrl = `git@github.com:${repoId}.git`;
   const tempDir = path.join(os.tmpdir(), `code-stories-${uuidv4()}`);
 
   spinner.text = `Cloning ${repoId}...`;

@@ -23,6 +23,11 @@
       "title": "How Code Stories Works: From Query to Interactive Tour",
       "commitHash": "48c7b1d7f934253ec66805c057673489ed274865",
       "createdAt": "2026-02-10T12:00:00.000Z"
+    },
+    {
+      "id": "picoclaw-multi-session",
+      "title": "Hacking Picoclaw for Multi-Session Support",
+      "createdAt": "2026-03-09T07:00:00.000Z"
     }
   ]
 }
