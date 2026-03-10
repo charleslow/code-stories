@@ -7,6 +7,7 @@ Sample stories:
 - [Inside BentoML: From Decorators to Production Inference](https://charleslow.github.io/code-stories/?url=https://raw.githubusercontent.com/charleslow/code-stories/main/sample_stories/bentoml.json)
 - [One API, Many Frameworks: How Einops Achieves Framework Independence](https://charleslow.github.io/code-stories/?url=https://raw.githubusercontent.com/charleslow/code-stories/main/sample_stories/einops.json)
 - [nanoGPT: A Language Model from Scratch](https://charleslow.github.io/code-stories/?url=https://raw.githubusercontent.com/charleslow/code-stories/main/sample_stories/nanogpt.json)
+- [Autoresearch End to End: Autonomous AI-Driven LLM Training](https://charleslow.github.io/code-stories/?repo=charleslow/code-stories-cache&story=autoresearch-end-to-end)
 - [The Design of OpenClaw: A Personal AI Gateway](https://charleslow.github.io/code-stories/?url=https://raw.githubusercontent.com/charleslow/code-stories/main/sample_stories/openclaw.json)
 
 PR review mode clones the repo, checks out the PR branch, fetches the diff and comments via `gh`, and generates a story that walks through the changes with inline diffs, concerns, and suggestions.
