@@ -13,15 +13,22 @@ function localStoriesMiddleware(req: any, res: any, next: any) {
       const files = fs.readdirSync(storiesDir).filter((f: string) => f.endsWith('.json') && f !== 'manifest.json')
       const stories = files.map((f: string) => {
         try {
-          const data = JSON.parse(fs.readFileSync(path.join(storiesDir, f), 'utf-8'))
+          const filePath = path.join(storiesDir, f)
+          const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
+          const mtime = fs.statSync(filePath).mtimeMs
           return {
             id: data.id || f.replace('.json', ''),
             title: data.title || f.replace('.json', ''),
             createdAt: data.createdAt || null,
             url: `local-stories/${f}`,
+            mtime,
           }
         } catch { return null }
       }).filter(Boolean)
+      // Sort by file modification time, most recent first
+      stories.sort((a: any, b: any) => b.mtime - a.mtime)
+      // Remove mtime before sending to client
+      stories.forEach((s: any) => delete s.mtime)
       res.setHeader('Content-Type', 'application/json')
       res.end(JSON.stringify(stories))
     } catch {
