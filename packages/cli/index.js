@@ -10,6 +10,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { buildPrompt } from './prompt.js';
 import { buildPRPrompt } from './prompt-pr.js';
 import { fetchPRData } from './pr.js';
+import { detectPlatform, resolveCli, parseRepoId, getCloneUrl, checkoutMR } from './hosting.js';
 
 // Configuration (resolved relative to cwd)
 const STORIES_DIR = path.resolve('./stories');
@@ -46,19 +47,10 @@ function getCommitHash(cwd = process.cwd()) {
   }
 }
 
-// Parse GitHub repo identifier (supports user/repo or full URL)
-function parseGitHubRepo(repo) {
-  const urlMatch = repo.match(/github\.com[/:]([^/]+\/[^/.]+)/);
-  if (urlMatch) {
-    return urlMatch[1];
-  }
-  return repo;
-}
-
-// Clone a GitHub repo to a temp directory
-function cloneRepo(repo, spinner) {
-  const repoId = parseGitHubRepo(repo);
-  const cloneUrl = `git@github.com:${repoId}.git`;
+// Clone a repo to a temp directory
+function cloneRepo(repo, platform, spinner) {
+  const repoId = parseRepoId(repo);
+  const cloneUrl = getCloneUrl(repoId, platform, { useSSH: true });
   const tempDir = path.join(os.tmpdir(), `code-stories-${uuidv4()}`);
 
   spinner.text = `Cloning ${repoId}...`;
@@ -87,10 +79,10 @@ function cleanupClone(tempDir) {
   }
 }
 
-// Clone a GitHub repo for PR review (full clone, then checkout PR branch)
-function cloneRepoForPR(repo, prNumber, spinner) {
-  const repoId = parseGitHubRepo(repo);
-  const cloneUrl = `https://github.com/${repoId}.git`;
+// Clone a repo for PR/MR review (full clone, then checkout branch)
+function cloneRepoForPR(repo, prNumber, platform, cli, spinner) {
+  const repoId = parseRepoId(repo);
+  const cloneUrl = getCloneUrl(repoId, platform);
   const tempDir = path.join(os.tmpdir(), `code-stories-${uuidv4()}`);
 
   spinner.text = `Cloning ${repoId}...`;
@@ -107,17 +99,13 @@ function cloneRepoForPR(repo, prNumber, spinner) {
     throw e;
   }
 
-  spinner.text = `Checking out PR #${prNumber}...`;
+  const mrLabel = cli === 'glab' ? 'MR' : 'PR';
+  spinner.text = `Checking out ${mrLabel} #${prNumber}...`;
   try {
-    execFileSync('gh', ['pr', 'checkout', String(prNumber)], {
-      cwd: tempDir,
-      encoding: 'utf-8',
-      stdio: 'pipe',
-      timeout: 60_000,
-    });
+    checkoutMR(prNumber, tempDir, cli);
   } catch (e) {
     if (e.killed) {
-      throw new Error(`PR checkout timed out after 60 seconds.`);
+      throw new Error(`${mrLabel} checkout timed out after 60 seconds.`);
     }
     throw e;
   }
@@ -345,22 +333,22 @@ program
   .description('Generate narrative-driven code stories using Claude')
   .version('0.1.0')
   .argument('[query]', 'Question about the codebase to generate a story for')
-  .option('-r, --repo <repo>', 'GitHub repository (user/repo or full URL)')
-  .option('--pr <number>', 'PR number to review', parseInt)
+  .option('-r, --repo <repo>', 'GitHub or GitLab repository (user/repo or full URL)')
+  .option('--pr <number>', 'PR/MR number to review', parseInt)
   .action(async (query, options) => {
     if (!query && !options.pr) {
       console.error('Error: must provide a query or --pr <number>');
       process.exit(1);
     }
 
-    // Check gh availability when --pr is used
+    // Detect platform and resolve CLI
+    let cli = null;
+    let platform = null;
     if (options.pr) {
-      try {
-        execFileSync('gh', ['--version'], { stdio: 'pipe' });
-      } catch {
-        console.error('Error: --pr mode requires the GitHub CLI (gh). Install it from https://cli.github.com/');
-        process.exit(1);
-      }
+      platform = detectPlatform({ cwd: process.cwd(), repoArg: options.repo });
+      const resolved = resolveCli(platform);
+      cli = resolved.cli;
+      platform = resolved.platform;
     }
 
     let repoId = null;
@@ -372,12 +360,15 @@ program
     try {
       if (options.repo) {
         spinner.start();
+        if (!platform) {
+          platform = detectPlatform({ repoArg: options.repo });
+        }
         if (options.pr) {
-          const result = cloneRepoForPR(options.repo, options.pr, spinner);
+          const result = cloneRepoForPR(options.repo, options.pr, platform, cli, spinner);
           activeCloneDir = result.tempDir;
           repoId = result.repoId;
         } else {
-          const result = cloneRepo(options.repo, spinner);
+          const result = cloneRepo(options.repo, platform, spinner);
           activeCloneDir = result.tempDir;
           repoId = result.repoId;
         }
@@ -387,12 +378,13 @@ program
       const cwd = activeCloneDir || process.cwd();
 
       if (options.pr) {
-        spinner.start('Fetching PR data...');
-        prData = await fetchPRData(options.pr, cwd);
+        const mrLabel = cli === 'glab' ? 'MR' : 'PR';
+        spinner.start(`Fetching ${mrLabel} data...`);
+        prData = await fetchPRData(options.pr, cwd, cli);
         spinner.stop();
 
         if (!query) {
-          query = `Review PR #${prData.metadata.number}: ${prData.metadata.title}`;
+          query = `Review ${mrLabel} #${prData.metadata.number}: ${prData.metadata.title}`;
         }
       }
 
