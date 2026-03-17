@@ -1,4 +1,10 @@
-import { execFileSync } from 'child_process';
+import {
+  getRepoIdentifier,
+  fetchMRMetadata,
+  fetchMRDiff,
+  fetchReviewComments,
+  fetchIssue,
+} from './hosting.js';
 
 /**
  * Parse a unified diff string into structured file objects with hunks.
@@ -47,24 +53,19 @@ export function parseDiff(rawDiff) {
 }
 
 /**
- * Get {owner}/{repo} identifier from the current working directory.
+ * Parse linked issue numbers from PR/MR body text.
+ * Matches GitHub patterns (closes/fixes/resolves #N) and
+ * GitLab patterns (close/closing/implement/etc. #N).
  */
-function getRepoIdentifier(cwd) {
-  const result = execFileSync('gh', ['repo', 'view', '--json', 'nameWithOwner', '-q', '.nameWithOwner'], {
-    cwd,
-    encoding: 'utf-8',
-    stdio: ['pipe', 'pipe', 'pipe'],
-  });
-  return result.trim();
-}
-
-/**
- * Parse linked issue numbers from PR body text.
- * Matches patterns like "closes #N", "fixes #N", "resolves #N".
- */
-function parseLinkedIssues(body) {
+export function parseLinkedIssues(body) {
   if (!body) return [];
-  const pattern = /(?:closes|fixes|resolves)\s+#(\d+)/gi;
+  const keywords = [
+    'close', 'closes', 'closed', 'closing',
+    'fix', 'fixes', 'fixed', 'fixing',
+    'resolve', 'resolves', 'resolved', 'resolving',
+    'implement', 'implements', 'implemented',
+  ];
+  const pattern = new RegExp(`(?:${keywords.join('|')})\\s+#(\\d+)`, 'gi');
   const issues = [];
   let match;
   while ((match = pattern.exec(body)) !== null) {
@@ -74,91 +75,46 @@ function parseLinkedIssues(body) {
 }
 
 /**
- * Fetch all data for a PR: metadata, diff, and comments.
+ * Fetch all data for a PR/MR: metadata, diff, and comments.
  *
  * @param {number} prNumber
  * @param {string} cwd - working directory (must be inside the repo)
- * @returns {{ metadata: object, diff: object[], comments: object[] }}
+ * @param {'gh' | 'glab'} cli - which CLI to use
+ * @returns {{ metadata: object, diff: object[], rawDiff: string }}
  */
-export async function fetchPRData(prNumber, cwd) {
-  const nwo = getRepoIdentifier(cwd);
+export function fetchPRData(prNumber, cwd, cli = 'gh') {
+  const nwo = getRepoIdentifier(cwd, cli);
 
-  // PR metadata
-  const metaRaw = execFileSync('gh', [
-    'pr', 'view', String(prNumber),
-    '--json', 'number,title,body,baseRefName,headRefName,author,url,labels',
-  ], { cwd, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
-  const meta = JSON.parse(metaRaw);
+  // MR/PR metadata (normalized)
+  const meta = fetchMRMetadata(prNumber, cwd, cli);
 
   // Unified diff
-  const rawDiff = execFileSync('gh', ['pr', 'diff', String(prNumber)], {
-    cwd,
-    encoding: 'utf-8',
-    stdio: ['pipe', 'pipe', 'pipe'],
-  });
+  const rawDiff = fetchMRDiff(prNumber, cwd, cli);
   const diff = parseDiff(rawDiff);
 
-  // Review comments (inline on code)
-  let reviewComments = [];
-  try {
-    const rcRaw = execFileSync('gh', [
-      'api', `repos/${nwo}/pulls/${prNumber}/comments`, '--paginate',
-    ], { cwd, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
-    reviewComments = JSON.parse(rcRaw);
-  } catch {
-    // May have no review comments
-  }
-
-  // Issue comments (top-level discussion)
-  let issueComments = [];
-  try {
-    const icRaw = execFileSync('gh', [
-      'api', `repos/${nwo}/issues/${prNumber}/comments`, '--paginate',
-    ], { cwd, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
-    issueComments = JSON.parse(icRaw);
-  } catch {
-    // May have no issue comments
-  }
+  // Comments (normalized)
+  const comments = fetchReviewComments(prNumber, nwo, cwd, cli);
 
   // Fetch linked issues
   const linkedIssueNumbers = parseLinkedIssues(meta.body);
   const linkedIssues = [];
   for (const issueNum of linkedIssueNumbers) {
     try {
-      const issueRaw = execFileSync('gh', [
-        'api', `repos/${nwo}/issues/${issueNum}`,
-      ], { cwd, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
-      linkedIssues.push(JSON.parse(issueRaw));
+      linkedIssues.push(fetchIssue(issueNum, nwo, cwd, cli));
     } catch {
       // Issue may not exist or be accessible
     }
   }
 
-  // Normalize comments into a unified format
-  const comments = [
-    ...issueComments.map(c => ({
-      author: c.user?.login || 'unknown',
-      body: c.body || '',
-      createdAt: c.created_at,
-    })),
-    ...reviewComments.map(c => ({
-      author: c.user?.login || 'unknown',
-      body: c.body || '',
-      path: c.path || undefined,
-      line: c.line || c.original_line || undefined,
-      createdAt: c.created_at,
-    })),
-  ];
-
   const metadata = {
     number: meta.number,
     title: meta.title,
-    description: meta.body || '',
-    baseBranch: meta.baseRefName,
-    headBranch: meta.headRefName,
-    author: meta.author?.login || 'unknown',
+    description: meta.body,
+    baseBranch: meta.baseBranch,
+    headBranch: meta.headBranch,
+    author: meta.authorLogin,
     url: meta.url,
-    labels: (meta.labels || []).map(l => l.name),
+    labels: meta.labels,
     comments,
     linkedIssues,
   };
