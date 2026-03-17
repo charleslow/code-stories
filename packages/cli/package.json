@@ -7,7 +7,8 @@
     "code-stories": "index.js"
   },
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "test": "node --test '*.test.js'"
   },
   "dependencies": {
     "commander": "^12.1.0",

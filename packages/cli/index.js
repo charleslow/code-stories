@@ -48,9 +48,9 @@ function getCommitHash(cwd = process.cwd()) {
 }
 
 // Clone a repo to a temp directory
-function cloneRepo(repo, platform, spinner) {
+function cloneRepo(repo, host, spinner) {
   const repoId = parseRepoId(repo);
-  const cloneUrl = getCloneUrl(repoId, platform, { useSSH: true });
+  const cloneUrl = getCloneUrl(repoId, { host, useSSH: true });
   const tempDir = path.join(os.tmpdir(), `code-stories-${uuidv4()}`);
 
   spinner.text = `Cloning ${repoId}...`;
@@ -80,9 +80,9 @@ function cleanupClone(tempDir) {
 }
 
 // Clone a repo for PR/MR review (full clone, then checkout branch)
-function cloneRepoForPR(repo, prNumber, platform, cli, spinner) {
+function cloneRepoForPR(repo, prNumber, host, cli, spinner) {
   const repoId = parseRepoId(repo);
-  const cloneUrl = getCloneUrl(repoId, platform);
+  const cloneUrl = getCloneUrl(repoId, { host });
   const tempDir = path.join(os.tmpdir(), `code-stories-${uuidv4()}`);
 
   spinner.text = `Cloning ${repoId}...`;
@@ -344,11 +344,13 @@ program
     // Detect platform and resolve CLI
     let cli = null;
     let platform = null;
+    let host = null;
     if (options.pr) {
-      platform = detectPlatform({ cwd: process.cwd(), repoArg: options.repo });
+      const detected = detectPlatform({ cwd: process.cwd(), repoArg: options.repo });
+      platform = detected.platform;
+      host = detected.host;
       const resolved = resolveCli(platform);
       cli = resolved.cli;
-      platform = resolved.platform;
     }
 
     let repoId = null;
@@ -361,14 +363,16 @@ program
       if (options.repo) {
         spinner.start();
         if (!platform) {
-          platform = detectPlatform({ repoArg: options.repo });
+          const detected = detectPlatform({ repoArg: options.repo });
+          platform = detected.platform;
+          host = detected.host;
         }
         if (options.pr) {
-          const result = cloneRepoForPR(options.repo, options.pr, platform, cli, spinner);
+          const result = cloneRepoForPR(options.repo, options.pr, host, cli, spinner);
           activeCloneDir = result.tempDir;
           repoId = result.repoId;
         } else {
-          const result = cloneRepo(options.repo, platform, spinner);
+          const result = cloneRepo(options.repo, host, spinner);
           activeCloneDir = result.tempDir;
           repoId = result.repoId;
         }

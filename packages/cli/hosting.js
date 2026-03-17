@@ -4,13 +4,14 @@ import { execFileSync, execSync } from 'child_process';
  * Detect the hosting platform from a git remote URL or repo argument.
  *
  * @param {{ cwd?: string, repoArg?: string }} options
- * @returns {'github' | 'gitlab'} detected platform
+ * @returns {{ platform: 'github' | 'gitlab', host: string }} detected platform and host
  */
 export function detectPlatform({ cwd, repoArg } = {}) {
   // If a repo argument is provided, parse it first
   if (repoArg) {
-    if (/gitlab\.com/i.test(repoArg) || /gitlab\./i.test(repoArg)) return 'gitlab';
-    if (/github\.com/i.test(repoArg)) return 'github';
+    const gitlabHost = repoArg.match(/(?:https?:\/\/|git@)(gitlab\.[^/:]+)/i);
+    if (gitlabHost) return { platform: 'gitlab', host: gitlabHost[1] };
+    if (/github\.com/i.test(repoArg)) return { platform: 'github', host: 'github.com' };
     // Bare owner/repo format — fall through to remote detection or default
   }
 
@@ -22,14 +23,15 @@ export function detectPlatform({ cwd, repoArg } = {}) {
         encoding: 'utf-8',
         stdio: ['pipe', 'pipe', 'pipe'],
       }).trim();
-      if (/gitlab\./i.test(remoteUrl)) return 'gitlab';
-      if (/github\.com/i.test(remoteUrl)) return 'github';
+      const gitlabHost = remoteUrl.match(/(?:https?:\/\/|git@)(gitlab\.[^/:]+)/i);
+      if (gitlabHost) return { platform: 'gitlab', host: gitlabHost[1] };
+      if (/github\.com/i.test(remoteUrl)) return { platform: 'github', host: 'github.com' };
     } catch {
       // Not a git repo or no remote — fall through
     }
   }
 
-  return 'github'; // default
+  return { platform: 'github', host: 'github.com' }; // default
 }
 
 /**
@@ -52,21 +54,18 @@ export function isCliAvailable(cli) {
  */
 export function resolveCli(platform) {
   const preferred = platform === 'gitlab' ? 'glab' : 'gh';
-  const fallback = platform === 'gitlab' ? 'gh' : 'glab';
 
   if (isCliAvailable(preferred)) {
     return { cli: preferred, platform };
   }
 
-  if (isCliAvailable(fallback)) {
-    // Flip platform to match the available CLI
-    const fallbackPlatform = fallback === 'gh' ? 'github' : 'gitlab';
-    return { cli: fallback, platform: fallbackPlatform };
-  }
+  const installUrl = platform === 'gitlab'
+    ? 'https://gitlab.com/gitlab-org/cli'
+    : 'https://cli.github.com/';
 
   throw new Error(
-    `No supported CLI found. Install the GitHub CLI (gh) from https://cli.github.com/ ` +
-    `or the GitLab CLI (glab) from https://gitlab.com/gitlab-org/cli`
+    `The ${platform} CLI (${preferred}) is required but not installed. ` +
+    `Install it from ${installUrl}`
   );
 }
 
@@ -85,9 +84,11 @@ export function parseRepoId(repo) {
 
 /**
  * Get the clone URL for a repo.
+ *
+ * @param {string} repoId - owner/repo or group/project identifier
+ * @param {{ host?: string, useSSH?: boolean }} options
  */
-export function getCloneUrl(repoId, platform, { useSSH = false } = {}) {
-  const host = platform === 'gitlab' ? 'gitlab.com' : 'github.com';
+export function getCloneUrl(repoId, { host = 'github.com', useSSH = false } = {}) {
   if (useSSH) {
     return `git@${host}:${repoId}.git`;
   }

@@ -54,11 +54,18 @@ export function parseDiff(rawDiff) {
 
 /**
  * Parse linked issue numbers from PR/MR body text.
- * Matches patterns like "closes #N", "fixes #N", "resolves #N".
+ * Matches GitHub patterns (closes/fixes/resolves #N) and
+ * GitLab patterns (close/closing/implement/etc. #N).
  */
-function parseLinkedIssues(body) {
+export function parseLinkedIssues(body) {
   if (!body) return [];
-  const pattern = /(?:closes|fixes|resolves)\s+#(\d+)/gi;
+  const keywords = [
+    'close', 'closes', 'closed', 'closing',
+    'fix', 'fixes', 'fixed', 'fixing',
+    'resolve', 'resolves', 'resolved', 'resolving',
+    'implement', 'implements', 'implemented',
+  ];
+  const pattern = new RegExp(`(?:${keywords.join('|')})\\s+#(\\d+)`, 'gi');
   const issues = [];
   let match;
   while ((match = pattern.exec(body)) !== null) {
