@@ -15,65 +15,56 @@ export function extractHost(url) {
 }
 
 /**
- * Detect the hosting platform from a git remote URL, repo argument,
- * or explicit platform override.
+ * Detect the hosting platform from a git remote URL or repo argument.
  *
- * Detection order:
- * 1. Explicit `platform` override (with host extracted from URL or defaulted)
- * 2. Hostname heuristic: "github.com" → github, "gitlab.*" → gitlab
- * 3. For unrecognized hosts: check if `glab` is configured for this repo
- * 4. Default: github
+ * Detection checks the hostname from repoArg and git remote origin against
+ * known GitHub/GitLab domain patterns. Defaults to github if unrecognized.
  *
- * @param {{ cwd?: string, repoArg?: string, platform?: 'github' | 'gitlab' }} options
+ * @param {{ cwd?: string, repoArg?: string }} options
  * @returns {{ platform: 'github' | 'gitlab', host: string }}
  */
-export function detectPlatform({ cwd, repoArg, platform: explicitPlatform } = {}) {
+export function detectPlatform({ cwd, repoArg } = {}) {
   const remoteUrl = getRemoteUrl(cwd);
 
-  // Resolve host from repoArg or remote URL
-  const hostFromArg = repoArg ? extractHost(repoArg) : null;
-  const hostFromRemote = remoteUrl ? extractHost(remoteUrl) : null;
-  const host = hostFromArg || hostFromRemote || null;
-
-  // 1. Explicit platform override
-  if (explicitPlatform) {
-    const resolvedHost = host || (explicitPlatform === 'gitlab' ? 'gitlab.com' : 'github.com');
-    return { platform: explicitPlatform, host: resolvedHost };
-  }
-
-  // 2. Hostname heuristic — check both repoArg and remote
+  // Check both repoArg and remote URL for known hosts
   const urlsToCheck = [repoArg, remoteUrl].filter(Boolean);
   for (const url of urlsToCheck) {
     const h = extractHost(url);
     if (!h) continue;
     if (isGitLabHost(h)) return { platform: 'gitlab', host: h };
-    if (/^github\.com$/i.test(h)) return { platform: 'github', host: h };
+    if (isGitHubHost(h)) return { platform: 'github', host: h };
   }
 
-  // 3. Unrecognized host — try glab as a probe for GitLab
-  if (cwd && host && isCliAvailable('glab')) {
-    try {
-      execFileSync('glab', ['repo', 'view', '-F', 'json'], {
-        cwd,
-        encoding: 'utf-8',
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
-      return { platform: 'gitlab', host };
-    } catch {
-      // glab doesn't recognize this repo — fall through
-    }
-  }
-
-  return { platform: 'github', host: host || 'github.com' };
+  // Derive host from whatever URL we have, or default
+  const host = (repoArg && extractHost(repoArg))
+    || (remoteUrl && extractHost(remoteUrl))
+    || 'github.com';
+  return { platform: 'github', host };
 }
 
 /**
- * Check if a hostname looks like a GitLab instance.
- * Matches: gitlab.com, gitlab.example.com, sgts.gitlab-dedicated.com,
- * and any host containing "gitlab" as a domain segment.
+ * Known GitLab domain patterns. A hostname is considered GitLab if it matches
+ * any of these (case-insensitive):
+ *   - gitlab.com                     (SaaS)
+ *   - gitlab.<anything>              (self-hosted, e.g. gitlab.example.com)
+ *   - <anything>.gitlab.com          (subdomains)
+ *   - <anything>.gitlab-dedicated.com (GitLab Dedicated)
+ *   - <anything>.gitlab.io           (GitLab Pages / instances)
  */
+const GITLAB_PATTERNS = [
+  /^gitlab\.com$/i,
+  /^gitlab\..+/i,
+  /\.gitlab\.com$/i,
+  /\.gitlab-dedicated\.com$/i,
+  /\.gitlab\.io$/i,
+];
+
 function isGitLabHost(hostname) {
-  return /(?:^|\.)gitlab[-.]/i.test(hostname);
+  return GITLAB_PATTERNS.some(p => p.test(hostname));
+}
+
+function isGitHubHost(hostname) {
+  return /^github\.com$/i.test(hostname);
 }
 
 /**

@@ -83,39 +83,10 @@ describe('detectPlatform', () => {
     assert.equal(result.host, 'github.com');
   });
 
-  // Explicit platform override
-  it('honors explicit platform=gitlab with bare owner/repo', () => {
-    const result = detectPlatform({ repoArg: 'owner/repo', platform: 'gitlab' });
+  it('detects gitlab.com subdomains', () => {
+    const result = detectPlatform({ repoArg: 'https://my-org.gitlab.com/team/repo' });
     assert.equal(result.platform, 'gitlab');
-    assert.equal(result.host, 'gitlab.com');
-  });
-
-  it('honors explicit platform=gitlab with custom-domain URL', () => {
-    const result = detectPlatform({
-      repoArg: 'https://code.mycompany.com/team/repo',
-      platform: 'gitlab',
-    });
-    assert.equal(result.platform, 'gitlab');
-    assert.equal(result.host, 'code.mycompany.com');
-  });
-
-  it('honors explicit platform=github even when URL looks like gitlab', () => {
-    // Edge case: explicit override wins
-    const result = detectPlatform({
-      repoArg: 'https://gitlab.com/group/project',
-      platform: 'github',
-    });
-    assert.equal(result.platform, 'github');
-    assert.equal(result.host, 'gitlab.com');
-  });
-
-  it('preserves custom host from SSH URL with explicit platform', () => {
-    const result = detectPlatform({
-      repoArg: 'git@code.corp.io:team/repo.git',
-      platform: 'gitlab',
-    });
-    assert.equal(result.platform, 'gitlab');
-    assert.equal(result.host, 'code.corp.io');
+    assert.equal(result.host, 'my-org.gitlab.com');
   });
 });
 

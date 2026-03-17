@@ -335,12 +335,6 @@ program
   .argument('[query]', 'Question about the codebase to generate a story for')
   .option('-r, --repo <repo>', 'GitHub or GitLab repository (user/repo or full URL)')
   .option('--pr <number>', 'PR/MR number to review', parseInt)
-  .option('--platform <platform>', 'Force platform: "github" or "gitlab" (for custom-domain instances)', (value) => {
-    if (value !== 'github' && value !== 'gitlab') {
-      throw new Error('--platform must be "github" or "gitlab"');
-    }
-    return value;
-  })
   .action(async (query, options) => {
     if (!query && !options.pr) {
       console.error('Error: must provide a query or --pr <number>');
@@ -352,7 +346,7 @@ program
     let platform = null;
     let host = null;
     if (options.pr) {
-      const detected = detectPlatform({ cwd: process.cwd(), repoArg: options.repo, platform: options.platform });
+      const detected = detectPlatform({ cwd: process.cwd(), repoArg: options.repo });
       platform = detected.platform;
       host = detected.host;
       const resolved = resolveCli(platform);
@@ -369,7 +363,7 @@ program
       if (options.repo) {
         spinner.start();
         if (!platform) {
-          const detected = detectPlatform({ repoArg: options.repo, platform: options.platform });
+          const detected = detectPlatform({ repoArg: options.repo });
           platform = detected.platform;
           host = detected.host;
         }
