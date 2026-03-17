@@ -1,13 +1,32 @@
-import { describe, it, beforeEach, afterEach } from 'node:test';
+import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-// We test pure-logic functions by importing them directly.
-// For functions that call execFileSync/execSync, we test via a thin mock.
-import { detectPlatform, resolveCli, parseRepoId, getCloneUrl } from './hosting.js';
+import { detectPlatform, extractHost, resolveCli, parseRepoId, getCloneUrl } from './hosting.js';
 import { parseLinkedIssues } from './pr.js';
 
 // ---------------------------------------------------------------------------
-// detectPlatform – only the repoArg path is pure logic (no git calls)
+// extractHost
+// ---------------------------------------------------------------------------
+describe('extractHost', () => {
+  it('extracts host from HTTPS URL', () => {
+    assert.equal(extractHost('https://github.com/owner/repo'), 'github.com');
+  });
+
+  it('extracts host from SSH URL', () => {
+    assert.equal(extractHost('git@gitlab.corp.net:team/repo.git'), 'gitlab.corp.net');
+  });
+
+  it('extracts host from custom-domain HTTPS URL', () => {
+    assert.equal(extractHost('https://code.mycompany.com/team/repo'), 'code.mycompany.com');
+  });
+
+  it('returns null for bare owner/repo', () => {
+    assert.equal(extractHost('owner/repo'), null);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// detectPlatform – repoArg-only paths (no git calls needed)
 // ---------------------------------------------------------------------------
 describe('detectPlatform', () => {
   it('detects github.com from HTTPS URL', () => {
@@ -45,6 +64,41 @@ describe('detectPlatform', () => {
     assert.equal(result.platform, 'github');
     assert.equal(result.host, 'github.com');
   });
+
+  // Explicit platform override
+  it('honors explicit platform=gitlab with bare owner/repo', () => {
+    const result = detectPlatform({ repoArg: 'owner/repo', platform: 'gitlab' });
+    assert.equal(result.platform, 'gitlab');
+    assert.equal(result.host, 'gitlab.com');
+  });
+
+  it('honors explicit platform=gitlab with custom-domain URL', () => {
+    const result = detectPlatform({
+      repoArg: 'https://code.mycompany.com/team/repo',
+      platform: 'gitlab',
+    });
+    assert.equal(result.platform, 'gitlab');
+    assert.equal(result.host, 'code.mycompany.com');
+  });
+
+  it('honors explicit platform=github even when URL looks like gitlab', () => {
+    // Edge case: explicit override wins
+    const result = detectPlatform({
+      repoArg: 'https://gitlab.com/group/project',
+      platform: 'github',
+    });
+    assert.equal(result.platform, 'github');
+    assert.equal(result.host, 'gitlab.com');
+  });
+
+  it('preserves custom host from SSH URL with explicit platform', () => {
+    const result = detectPlatform({
+      repoArg: 'git@code.corp.io:team/repo.git',
+      platform: 'gitlab',
+    });
+    assert.equal(result.platform, 'gitlab');
+    assert.equal(result.host, 'code.corp.io');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -76,6 +130,14 @@ describe('parseRepoId', () => {
 
   it('passes through bare owner/repo unchanged', () => {
     assert.equal(parseRepoId('owner/repo'), 'owner/repo');
+  });
+
+  it('extracts path from custom-domain HTTPS URL', () => {
+    assert.equal(parseRepoId('https://code.mycompany.com/team/repo'), 'team/repo');
+  });
+
+  it('extracts path from custom-domain SSH URL', () => {
+    assert.equal(parseRepoId('git@code.mycompany.com:team/repo.git'), 'team/repo');
   });
 });
 
@@ -114,20 +176,22 @@ describe('getCloneUrl', () => {
       'git@gitlab.corp.net:team/repo.git',
     );
   });
+
+  it('generates URL for custom-domain host', () => {
+    assert.equal(
+      getCloneUrl('team/repo', { host: 'code.mycompany.com' }),
+      'https://code.mycompany.com/team/repo.git',
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------
-// resolveCli – tests the error behavior (we can't easily mock isCliAvailable
-// without a DI refactor, but we CAN test that it throws for missing CLIs)
+// resolveCli
 // ---------------------------------------------------------------------------
 describe('resolveCli', () => {
   it('throws an error mentioning the correct CLI when platform CLI is missing', () => {
-    // Use a fake platform value to guarantee the preferred CLI won't be found.
-    // Since neither 'gh' nor 'glab' might be installed in CI, we test the
-    // error message structure by checking it includes the platform name.
     try {
       resolveCli('gitlab');
-      // If glab IS installed, the call succeeds — that's fine, skip assertion.
     } catch (err) {
       assert.match(err.message, /gitlab/i);
       assert.match(err.message, /glab/);
@@ -142,17 +206,12 @@ describe('resolveCli', () => {
   });
 
   it('does NOT silently flip to the other platform', () => {
-    // If the preferred CLI is missing, resolveCli should throw, not fall back.
-    // We verify this by checking the error is thrown (not a successful return
-    // with a different platform). If the preferred CLI IS installed, the test
-    // just passes — no flip to verify.
     try {
       const result = resolveCli('gitlab');
-      // If it succeeds, it must be because glab is installed — platform stays gitlab
       assert.equal(result.platform, 'gitlab');
       assert.equal(result.cli, 'glab');
     } catch {
-      // Expected when glab is not installed — the old code would have fallen back
+      // Expected when glab is not installed
     }
   });
 });

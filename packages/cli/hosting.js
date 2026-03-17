@@ -1,41 +1,87 @@
 import { execFileSync } from 'child_process';
 
 /**
- * Detect the hosting platform from a git remote URL or repo argument.
- *
- * Note: GitLab detection relies on the hostname starting with "gitlab.".
- * Self-hosted instances on custom domains (e.g. code.mycompany.com) will
- * default to GitHub. Use a full gitlab URL to override.
- *
- * @param {{ cwd?: string, repoArg?: string }} options
- * @returns {{ platform: 'github' | 'gitlab', host: string }} detected platform and host
+ * Extract the hostname from a git remote URL (HTTPS or SSH).
+ * Returns null if the URL format is not recognized.
  */
-export function detectPlatform({ cwd, repoArg } = {}) {
-  // If a repo argument is provided, parse it first
-  if (repoArg) {
-    const gitlabHost = repoArg.match(/(?:https?:\/\/|git@)(gitlab\.[^/:]+)/i);
-    if (gitlabHost) return { platform: 'gitlab', host: gitlabHost[1] };
-    if (/github\.com/i.test(repoArg)) return { platform: 'github', host: 'github.com' };
-    // Bare owner/repo format — fall through to remote detection or default
+export function extractHost(url) {
+  // HTTPS: https://host/path
+  const httpsMatch = url.match(/^https?:\/\/([^/:]+)/);
+  if (httpsMatch) return httpsMatch[1];
+  // SSH: git@host:path
+  const sshMatch = url.match(/^[^@]+@([^/:]+)/);
+  if (sshMatch) return sshMatch[1];
+  return null;
+}
+
+/**
+ * Detect the hosting platform from a git remote URL, repo argument,
+ * or explicit platform override.
+ *
+ * Detection order:
+ * 1. Explicit `platform` override (with host extracted from URL or defaulted)
+ * 2. Hostname heuristic: "github.com" → github, "gitlab.*" → gitlab
+ * 3. For unrecognized hosts: check if `glab` is configured for this repo
+ * 4. Default: github
+ *
+ * @param {{ cwd?: string, repoArg?: string, platform?: 'github' | 'gitlab' }} options
+ * @returns {{ platform: 'github' | 'gitlab', host: string }}
+ */
+export function detectPlatform({ cwd, repoArg, platform: explicitPlatform } = {}) {
+  const remoteUrl = getRemoteUrl(cwd);
+
+  // Resolve host from repoArg or remote URL
+  const hostFromArg = repoArg ? extractHost(repoArg) : null;
+  const hostFromRemote = remoteUrl ? extractHost(remoteUrl) : null;
+  const host = hostFromArg || hostFromRemote || null;
+
+  // 1. Explicit platform override
+  if (explicitPlatform) {
+    const resolvedHost = host || (explicitPlatform === 'gitlab' ? 'gitlab.com' : 'github.com');
+    return { platform: explicitPlatform, host: resolvedHost };
   }
 
-  // Try to detect from git remote
-  if (cwd) {
+  // 2. Hostname heuristic — check both repoArg and remote
+  const urlsToCheck = [repoArg, remoteUrl].filter(Boolean);
+  for (const url of urlsToCheck) {
+    const h = extractHost(url);
+    if (!h) continue;
+    if (/^gitlab\./i.test(h)) return { platform: 'gitlab', host: h };
+    if (/^github\.com$/i.test(h)) return { platform: 'github', host: h };
+  }
+
+  // 3. Unrecognized host — try glab as a probe for GitLab
+  if (cwd && host && isCliAvailable('glab')) {
     try {
-      const remoteUrl = execFileSync('git', ['remote', 'get-url', 'origin'], {
+      execFileSync('glab', ['repo', 'view', '-F', 'json'], {
         cwd,
         encoding: 'utf-8',
         stdio: ['pipe', 'pipe', 'pipe'],
-      }).trim();
-      const gitlabHost = remoteUrl.match(/(?:https?:\/\/|git@)(gitlab\.[^/:]+)/i);
-      if (gitlabHost) return { platform: 'gitlab', host: gitlabHost[1] };
-      if (/github\.com/i.test(remoteUrl)) return { platform: 'github', host: 'github.com' };
+      });
+      return { platform: 'gitlab', host };
     } catch {
-      // Not a git repo or no remote — fall through
+      // glab doesn't recognize this repo — fall through
     }
   }
 
-  return { platform: 'github', host: 'github.com' }; // default
+  return { platform: 'github', host: host || 'github.com' };
+}
+
+/**
+ * Get the git remote origin URL for a working directory.
+ * Returns null if not a git repo or no remote is configured.
+ */
+function getRemoteUrl(cwd) {
+  if (!cwd) return null;
+  try {
+    return execFileSync('git', ['remote', 'get-url', 'origin'], {
+      cwd,
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim();
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -76,13 +122,15 @@ export function resolveCli(platform) {
 /**
  * Parse a repo identifier from a URL or shorthand.
  * Returns the owner/repo (or group/project for GitLab).
+ * Handles HTTPS URLs, SSH URLs, and bare owner/repo shorthand.
  */
 export function parseRepoId(repo) {
-  // Full URL: extract path
-  const urlMatch = repo.match(/(?:github|gitlab)\.[^/]*[/:]([^/]+\/[^/.]+(?:\/[^/.]+)*)/);
-  if (urlMatch) {
-    return urlMatch[1].replace(/\.git$/, '');
-  }
+  // HTTPS URL: https://host/owner/repo[/sub/groups]
+  const httpsMatch = repo.match(/^https?:\/\/[^/]+\/(.+?)(?:\.git)?$/);
+  if (httpsMatch) return httpsMatch[1];
+  // SSH URL: git@host:owner/repo
+  const sshMatch = repo.match(/^[^@]+@[^:]+:(.+?)(?:\.git)?$/);
+  if (sshMatch) return sshMatch[1];
   return repo;
 }
 
