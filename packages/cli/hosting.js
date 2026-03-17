@@ -46,7 +46,7 @@ export function detectPlatform({ cwd, repoArg, platform: explicitPlatform } = {}
   for (const url of urlsToCheck) {
     const h = extractHost(url);
     if (!h) continue;
-    if (/^gitlab\./i.test(h)) return { platform: 'gitlab', host: h };
+    if (isGitLabHost(h)) return { platform: 'gitlab', host: h };
     if (/^github\.com$/i.test(h)) return { platform: 'github', host: h };
   }
 
@@ -65,6 +65,15 @@ export function detectPlatform({ cwd, repoArg, platform: explicitPlatform } = {}
   }
 
   return { platform: 'github', host: host || 'github.com' };
+}
+
+/**
+ * Check if a hostname looks like a GitLab instance.
+ * Matches: gitlab.com, gitlab.example.com, sgts.gitlab-dedicated.com,
+ * and any host containing "gitlab" as a domain segment.
+ */
+function isGitLabHost(hostname) {
+  return /(?:^|\.)gitlab[-.]/i.test(hostname);
 }
 
 /**

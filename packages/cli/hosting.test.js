@@ -53,6 +53,24 @@ describe('detectPlatform', () => {
     assert.equal(result.host, 'gitlab.corp.net');
   });
 
+  it('detects GitLab Dedicated from HTTPS URL', () => {
+    const result = detectPlatform({ repoArg: 'https://sgts.gitlab-dedicated.com/group/project' });
+    assert.equal(result.platform, 'gitlab');
+    assert.equal(result.host, 'sgts.gitlab-dedicated.com');
+  });
+
+  it('detects GitLab Dedicated from SSH URL', () => {
+    const result = detectPlatform({ repoArg: 'git@sgts.gitlab-dedicated.com:group/project.git' });
+    assert.equal(result.platform, 'gitlab');
+    assert.equal(result.host, 'sgts.gitlab-dedicated.com');
+  });
+
+  it('detects subdomain gitlab instances (e.g. company.gitlab.io)', () => {
+    const result = detectPlatform({ repoArg: 'https://company.gitlab.io/team/repo' });
+    assert.equal(result.platform, 'gitlab');
+    assert.equal(result.host, 'company.gitlab.io');
+  });
+
   it('defaults to github when given bare owner/repo', () => {
     const result = detectPlatform({ repoArg: 'owner/repo' });
     assert.equal(result.platform, 'github');
