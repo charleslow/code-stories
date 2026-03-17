@@ -1,7 +1,11 @@
-import { execFileSync, execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 
 /**
  * Detect the hosting platform from a git remote URL or repo argument.
+ *
+ * Note: GitLab detection relies on the hostname starting with "gitlab.".
+ * Self-hosted instances on custom domains (e.g. code.mycompany.com) will
+ * default to GitHub. Use a full gitlab URL to override.
  *
  * @param {{ cwd?: string, repoArg?: string }} options
  * @returns {{ platform: 'github' | 'gitlab', host: string }} detected platform and host
@@ -18,7 +22,7 @@ export function detectPlatform({ cwd, repoArg } = {}) {
   // Try to detect from git remote
   if (cwd) {
     try {
-      const remoteUrl = execSync('git remote get-url origin', {
+      const remoteUrl = execFileSync('git', ['remote', 'get-url', 'origin'], {
         cwd,
         encoding: 'utf-8',
         stdio: ['pipe', 'pipe', 'pipe'],
