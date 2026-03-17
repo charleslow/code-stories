@@ -63,8 +63,20 @@ function isGitLabHost(hostname) {
   return GITLAB_PATTERNS.some(p => p.test(hostname));
 }
 
+/**
+ * Known GitHub domain patterns:
+ *   - github.com                      (SaaS)
+ *   - github.<anything>               (GitHub Enterprise Server, e.g. github.mycompany.com)
+ *   - <anything>.ghe.com              (GitHub Enterprise Cloud with data residency)
+ */
+const GITHUB_PATTERNS = [
+  /^github\.com$/i,
+  /^github\..+/i,
+  /\.ghe\.com$/i,
+];
+
 function isGitHubHost(hostname) {
-  return /^github\.com$/i.test(hostname);
+  return GITHUB_PATTERNS.some(p => p.test(hostname));
 }
 
 /**
@@ -97,7 +109,8 @@ export function isCliAvailable(cli) {
 }
 
 /**
- * Resolve which CLI to use: prefers the platform-native CLI, falls back to the other.
+ * Resolve which CLI to use for the detected platform.
+ * Throws if the required CLI is not installed.
  *
  * @param {'github' | 'gitlab'} platform
  * @returns {{ cli: 'gh' | 'glab', platform: 'github' | 'gitlab' }}
@@ -300,17 +313,36 @@ export function fetchReviewComments(prNumber, nwo, cwd, cli) {
 
 /**
  * Fetch a linked issue by number.
+ * Returns a normalized issue object.
  */
 export function fetchIssue(issueNum, nwo, cwd, cli) {
   if (cli === 'glab') {
     const raw = execFileSync('glab', [
       'api', `projects/${encodeURIComponent(nwo)}/issues/${issueNum}`,
     ], { cwd, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
-    return JSON.parse(raw);
+    const issue = JSON.parse(raw);
+    return {
+      number: issue.iid,
+      title: issue.title,
+      body: issue.description || '',
+      state: issue.state,
+      authorLogin: issue.author?.username || 'unknown',
+      url: issue.web_url,
+      labels: issue.labels || [],
+    };
   }
 
   const raw = execFileSync('gh', [
     'api', `repos/${nwo}/issues/${issueNum}`,
   ], { cwd, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
-  return JSON.parse(raw);
+  const issue = JSON.parse(raw);
+  return {
+    number: issue.number,
+    title: issue.title,
+    body: issue.body || '',
+    state: issue.state,
+    authorLogin: issue.user?.login || 'unknown',
+    url: issue.html_url,
+    labels: (issue.labels || []).map(l => l.name),
+  };
 }

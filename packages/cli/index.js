@@ -384,7 +384,7 @@ program
       if (options.pr) {
         const mrLabel = cli === 'glab' ? 'MR' : 'PR';
         spinner.start(`Fetching ${mrLabel} data...`);
-        prData = await fetchPRData(options.pr, cwd, cli);
+        prData = fetchPRData(options.pr, cwd, cli);
         spinner.stop();
 
         if (!query) {

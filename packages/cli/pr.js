@@ -82,7 +82,7 @@ export function parseLinkedIssues(body) {
  * @param {'gh' | 'glab'} cli - which CLI to use
  * @returns {{ metadata: object, diff: object[], rawDiff: string }}
  */
-export async function fetchPRData(prNumber, cwd, cli = 'gh') {
+export function fetchPRData(prNumber, cwd, cli = 'gh') {
   const nwo = getRepoIdentifier(cwd, cli);
 
   // MR/PR metadata (normalized)

@@ -88,6 +88,18 @@ describe('detectPlatform', () => {
     assert.equal(result.platform, 'gitlab');
     assert.equal(result.host, 'my-org.gitlab.com');
   });
+
+  it('detects GitHub Enterprise Server (github.mycompany.com)', () => {
+    const result = detectPlatform({ repoArg: 'https://github.mycompany.com/team/repo' });
+    assert.equal(result.platform, 'github');
+    assert.equal(result.host, 'github.mycompany.com');
+  });
+
+  it('detects GitHub Enterprise Cloud data residency (*.ghe.com)', () => {
+    const result = detectPlatform({ repoArg: 'https://my-org.ghe.com/team/repo' });
+    assert.equal(result.platform, 'github');
+    assert.equal(result.host, 'my-org.ghe.com');
+  });
 });
 
 // ---------------------------------------------------------------------------
