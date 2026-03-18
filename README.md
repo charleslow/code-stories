@@ -17,8 +17,10 @@ PR review mode clones the repo, checks out the PR branch, fetches the diff and c
 - Node.js 18+
 - [Claude CLI](https://claude.ai/cli) installed and configured
 - A git repository to analyze
-- [GitHub CLI](https://cli.github.com/) (`gh`) — required for GitHub `--pr` mode
-- [GitLab CLI](https://gitlab.com/gitlab-org/cli) (`glab`) — required for GitLab `--pr` mode
+
+For PR/MR review mode only:
+- [GitHub CLI](https://cli.github.com/) (`gh`) — for GitHub PRs
+- [GitLab CLI](https://gitlab.com/gitlab-org/cli) (`glab`) — for GitLab MRs
 
 The CLI auto-detects whether a repo is on GitHub or GitLab (including self-hosted instances and GitLab Dedicated) and uses the appropriate tool.
 
