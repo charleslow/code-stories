@@ -17,7 +17,10 @@ PR review mode clones the repo, checks out the PR branch, fetches the diff and c
 - Node.js 18+
 - [Claude CLI](https://claude.ai/cli) installed and configured
 - A git repository to analyze
-- [GitHub CLI](https://cli.github.com/) (`gh`) — required for `--pr` mode
+- [GitHub CLI](https://cli.github.com/) (`gh`) — required for GitHub `--pr` mode
+- [GitLab CLI](https://gitlab.com/gitlab-org/cli) (`glab`) — required for GitLab `--pr` mode
+
+The CLI auto-detects whether a repo is on GitHub or GitLab (including self-hosted instances and GitLab Dedicated) and uses the appropriate tool.
 
 ## Quick Start
 
@@ -36,6 +39,46 @@ npx code-stories --repo user/repo --pr 42
 ```
 
 Stories are saved as JSON to `./stories/{id}.json` in your current working directory.
+
+### Common Scenarios
+
+**Explore an unfamiliar codebase:**
+```bash
+npx code-stories --repo user/repo "How is the project structured and what are the key modules?"
+```
+
+**Understand a specific feature:**
+```bash
+cd my-project
+npx code-stories "How does the authentication flow work end to end?"
+```
+
+**Review a GitHub PR:**
+```bash
+npx code-stories --repo user/repo --pr 123
+```
+
+**Review a GitLab MR:**
+```bash
+# GitLab SaaS
+npx code-stories --repo gitlab.com/group/project --pr 42
+
+# Self-hosted GitLab
+npx code-stories --repo gitlab.example.com/team/project --pr 42
+
+# Nested groups
+npx code-stories --repo gitlab.com/org/subgroup/project --pr 15
+```
+
+**Trace a request through the stack:**
+```bash
+npx code-stories "Trace an API request from the HTTP handler to the database and back"
+```
+
+**Onboard onto a dependency:**
+```bash
+npx code-stories --repo bentoml/BentoML "How do I define and deploy a service?"
+```
 
 ### Read a Story (Viewer)
 
