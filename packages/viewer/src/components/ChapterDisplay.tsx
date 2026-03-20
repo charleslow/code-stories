@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef, useSyncExternalStore } from '
 import type { Chapter, PRMetadata } from '../types';
 import { CodePanel } from './CodePanel';
 import { ExplanationPanel } from './ExplanationPanel';
+import ChatPanel from './ChatPanel';
 
 interface ChapterDisplayProps {
   chapter: Chapter;
@@ -12,6 +13,8 @@ interface ChapterDisplayProps {
   storyQuery?: string;
   storyRepo?: string | null;
   storyPR?: PRMetadata;
+  chatAvailable?: boolean;
+  storyId?: string;
 }
 
 const MIN_PANEL_PERCENT = 30;
@@ -30,12 +33,12 @@ function useIsMobile() {
   );
 }
 
-export function ChapterDisplay({ chapter, currentIndex, totalChapters, onPrev, onNext, storyQuery, storyRepo, storyPR }: ChapterDisplayProps) {
+export function ChapterDisplay({ chapter, currentIndex, totalChapters, onPrev, onNext, storyQuery, storyRepo, storyPR, chatAvailable, storyId }: ChapterDisplayProps) {
   const isFirst = currentIndex === 0;
   const isLast = currentIndex === totalChapters - 1;
   const isMobile = useIsMobile();
 
-  const [activeTab, setActiveTab] = useState<'explanation' | 'code'>('explanation');
+  const [activeTab, setActiveTab] = useState<'explanation' | 'code' | 'chat'>('explanation');
   const [codePanelPercent, setCodePanelPercent] = useState(50);
   const [isDragging, setIsDragging] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -88,6 +91,19 @@ export function ChapterDisplay({ chapter, currentIndex, totalChapters, onPrev, o
           >
             Code
           </button>
+          {chatAvailable && (
+            <button
+              className={`mobile-tab ${activeTab === 'chat' ? 'active' : ''}`}
+              onClick={() => setActiveTab('chat')}
+            >
+              Chat
+            </button>
+          )}
+        </div>
+      )}
+      {isMobile && activeTab === 'chat' && chatAvailable && storyId && (
+        <div className="chat-panel-fullscreen">
+          <ChatPanel storyId={storyId} chapterId={chapter.id} />
         </div>
       )}
       <div className="chapter-content" ref={containerRef}>
@@ -109,10 +125,15 @@ export function ChapterDisplay({ chapter, currentIndex, totalChapters, onPrev, o
           </div>
         )}
         {(!isMobile || activeTab === 'explanation') && (
-          <ExplanationPanel
-            explanation={chapter.explanation}
-            style={isMobile ? { flex: '1 1 100%' } : { flex: `0 0 ${100 - codePanelPercent}%` }}
-          />
+          <div style={isMobile ? { flex: '1 1 100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' } : { flex: `0 0 ${100 - codePanelPercent}%`, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <ExplanationPanel
+              explanation={chapter.explanation}
+              style={{ flex: chatAvailable ? undefined : '1 1 auto', overflow: 'auto' }}
+            />
+            {chatAvailable && storyId && !isMobile && (
+              <ChatPanel storyId={storyId} chapterId={chapter.id} />
+            )}
+          </div>
         )}
       </div>
       <div className="chapter-navigation">

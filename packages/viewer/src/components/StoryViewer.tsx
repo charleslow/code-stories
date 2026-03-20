@@ -6,9 +6,10 @@ import { ChapterDisplay } from './ChapterDisplay';
 interface StoryViewerProps {
   story: Story;
   onBack: () => void;
+  chatAvailable?: boolean;
 }
 
-export function StoryViewer({ story, onBack }: StoryViewerProps) {
+export function StoryViewer({ story, onBack, chatAvailable }: StoryViewerProps) {
   const [currentChapterIndex, setCurrentChapterIndex] = useState(0);
 
   const goToPrev = useCallback(() => {
@@ -76,6 +77,8 @@ export function StoryViewer({ story, onBack }: StoryViewerProps) {
             storyQuery={story.query}
             storyRepo={story.repo}
             storyPR={story.pr}
+            chatAvailable={chatAvailable}
+            storyId={story.id}
           />
         </main>
       </div>
