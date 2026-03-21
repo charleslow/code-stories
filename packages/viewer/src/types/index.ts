@@ -68,3 +68,15 @@ export interface StoryMetadata {
 
 // App state for viewer
 export type AppState = 'home' | 'loading' | 'reading' | 'error';
+
+// Chat types
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp?: string;
+}
+
+export interface StoryChat {
+  storyId: string;
+  chapters: Record<string, ChatMessage[]>;
+}

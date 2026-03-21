@@ -1,6 +1,6 @@
 // API client for fetching stories from URLs
 
-import type { Story, StoryManifest } from '../types';
+import type { Story, StoryManifest, StoryChat } from '../types';
 
 function fetchWithTimeout(url: string, timeoutMs = 30_000): Promise<Response> {
   const controller = new AbortController();
@@ -226,4 +226,50 @@ export function clearRecentStories(): void {
   } catch {
     // Ignore localStorage errors
   }
+}
+
+// Chat API — only works when running locally (Vite dev/preview server)
+
+export async function checkChatAvailable(): Promise<boolean> {
+  try {
+    const res = await fetch('/local-stories/_chat/available');
+    if (!res.ok) return false;
+    const data = await res.json();
+    return data.available === true;
+  } catch {
+    return false;
+  }
+}
+
+export async function fetchChatHistory(storyId: string, signal?: AbortSignal): Promise<StoryChat> {
+  try {
+    const res = await fetch(`/local-stories/_chat/${encodeURIComponent(storyId)}`, { signal });
+    if (!res.ok) return { storyId, chapters: {} };
+    return await res.json();
+  } catch {
+    return { storyId, chapters: {} };
+  }
+}
+
+export async function sendChatMessage(
+  storyId: string,
+  chapterId: string,
+  message: string,
+): Promise<string> {
+  const res = await fetch(
+    `/local-stories/_chat/${encodeURIComponent(storyId)}/${encodeURIComponent(chapterId)}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message }),
+    },
+  );
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Chat request failed' }));
+    throw new Error(err.error || 'Chat request failed');
+  }
+
+  const data = await res.json();
+  return data.reply;
 }

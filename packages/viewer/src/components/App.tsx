@@ -5,6 +5,7 @@ import {
   fetchStory,
   addRecentStory,
   getRecentStories,
+  checkChatAvailable,
   type RecentStory
 } from '../services/api';
 import { LandingPage } from './LandingPage';
@@ -18,10 +19,12 @@ export function App() {
   const [currentUrl, setCurrentUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [recentStories, setRecentStories] = useState<RecentStory[]>([]);
+  const [chatAvailable, setChatAvailable] = useState(false);
 
-  // Load recent stories on mount
+  // Load recent stories and check chat availability on mount
   useEffect(() => {
     setRecentStories(getRecentStories());
+    checkChatAvailable().then(setChatAvailable);
   }, []);
 
   // Check URL params on mount
@@ -104,7 +107,7 @@ export function App() {
       )}
       {appState === 'reading' && currentStory && (
         <ErrorBoundary>
-          <StoryViewer story={currentStory} onBack={handleBack} />
+          <StoryViewer story={currentStory} onBack={handleBack} chatAvailable={chatAvailable} />
         </ErrorBoundary>
       )}
     </div>
