@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type { ChatMessage } from '../types';
 import { sendChatMessage, fetchChatHistory } from '../services/api';
 
@@ -109,7 +110,7 @@ export default function ChatPanel({
             <div key={i} className={`chat-message chat-message-${msg.role}`}>
               <div className="chat-message-role">{msg.role === 'user' ? 'You' : 'Claude'}</div>
               <div className="chat-message-content">
-                <ReactMarkdown>
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
                   {msg.content}
                 </ReactMarkdown>
               </div>
