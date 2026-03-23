@@ -66,7 +66,7 @@ export default defineConfig({
   preview: {
     host: '127.0.0.1',
     port: 5173,
-    allowedHosts: ['claw-pc.tail93af1d.ts.net'],
+    allowedHosts: true,
   },
   plugins: [
     react(),
