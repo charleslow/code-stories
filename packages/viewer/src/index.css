@@ -1246,24 +1246,8 @@ body {
 .chat-panel {
   display: flex;
   flex-direction: column;
-  border-top: 1px solid var(--border-neutral);
   background: var(--bg-primary);
   margin-top: 24px;
-}
-
-.chat-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 16px;
-  border-bottom: 1px solid var(--border-subtle);
-  flex-shrink: 0;
-}
-
-.chat-header-title {
-  font-size: 0.8125rem;
-  font-weight: 600;
-  color: var(--text-secondary);
 }
 
 .chat-messages {
@@ -1271,14 +1255,6 @@ body {
   display: flex;
   flex-direction: column;
   gap: 12px;
-}
-
-.chat-empty {
-  color: var(--text-muted);
-  font-size: 0.8125rem;
-  text-align: center;
-  padding: 20px 0;
-  line-height: 1.5;
 }
 
 .chat-message {
