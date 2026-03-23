@@ -23,8 +23,15 @@ export function runClaude(prompt: string): Promise<string> {
       else resolve(result!)
     }
 
+    // Strip CLAUDECODE env vars so nested claude sessions don't fail
+    const cleanEnv = { ...process.env }
+    delete cleanEnv.CLAUDECODE
+    delete cleanEnv.CLAUDE_CODE_ENTRYPOINT
+    delete cleanEnv.CLAUDE_CODE_SESSION
+
     const proc = spawn('claude', ['-p', '--allowedTools', 'Read', '--add-dir', storiesDir], {
       stdio: ['pipe', 'pipe', 'pipe'],
+      env: cleanEnv,
     })
     console.log('[chat] claude process pid:', proc.pid)
 
