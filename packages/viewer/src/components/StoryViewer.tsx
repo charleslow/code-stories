@@ -23,6 +23,10 @@ export function StoryViewer({ story, onBack, chatAvailable }: StoryViewerProps) 
   // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+        return;
+      }
       if (e.key === 'ArrowLeft' || e.key === 'h' || e.key === 'H') {
         goToPrev();
       } else if (e.key === 'ArrowRight' || e.key === 'l' || e.key === 'L') {
