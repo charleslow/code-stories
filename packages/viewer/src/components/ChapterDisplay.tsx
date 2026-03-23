@@ -106,7 +106,7 @@ export function ChapterDisplay({ chapter, currentIndex, totalChapters, onPrev, o
           <ChatPanel storyId={storyId} chapterId={chapter.id} />
         </div>
       )}
-      <div className="chapter-content" ref={containerRef}>
+      {!(isMobile && activeTab === 'chat') && <div className="chapter-content" ref={containerRef}>
         {(!isMobile || activeTab === 'code') && (
           <CodePanel
             snippets={chapter.snippets}
@@ -134,7 +134,7 @@ export function ChapterDisplay({ chapter, currentIndex, totalChapters, onPrev, o
             )}
           </div>
         )}
-      </div>
+      </div>}
       <div className="chapter-navigation">
         <button
           className="nav-button prev"
