@@ -1295,10 +1295,21 @@ body {
   line-height: 1.6;
   letter-spacing: 0.01em;
   color: var(--text-prose, var(--text-primary));
+  padding: 0.75rem 1rem;
+  border-radius: 1rem;
+  text-align: left;
 }
 
 .chat-message-user .chat-message-content {
-  text-align: right;
+  background: rgba(240, 135, 176, 0.10);
+  border: 1px solid rgba(240, 135, 176, 0.15);
+  border-top-right-radius: 0.25rem;
+}
+
+.chat-message-assistant .chat-message-content {
+  background: var(--bg-elevated, #161B26);
+  border: 1px solid var(--border-neutral);
+  border-top-left-radius: 0.25rem;
 }
 
 .chat-message-content p {
