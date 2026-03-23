@@ -103,37 +103,30 @@ export default function ChatPanel({
 
   return (
     <div className="chat-panel" ref={chatPanelRef}>
-      <div className="chat-header">
-        <span className="chat-header-title">Ask about this chapter</span>
-      </div>
-
-      <div className="chat-messages">
-        {messages.length === 0 && !loading && (
-          <div className="chat-empty">
-            Ask a question about this chapter. Claude has context on the current, previous, and next chapters, plus the story overview.
-          </div>
-        )}
-        {messages.map((msg, i) => (
-          <div key={i} className={`chat-message chat-message-${msg.role}`}>
-            <div className="chat-message-role">{msg.role === 'user' ? 'You' : 'Claude'}</div>
-            <div className="chat-message-content">
-              <ReactMarkdown>
-                {msg.content}
-              </ReactMarkdown>
+      {(messages.length > 0 || loading || error) && (
+        <div className="chat-messages">
+          {messages.map((msg, i) => (
+            <div key={i} className={`chat-message chat-message-${msg.role}`}>
+              <div className="chat-message-role">{msg.role === 'user' ? 'You' : 'Claude'}</div>
+              <div className="chat-message-content">
+                <ReactMarkdown>
+                  {msg.content}
+                </ReactMarkdown>
+              </div>
             </div>
-          </div>
-        ))}
-        {loading && (
-          <div className="chat-message chat-message-assistant">
-            <div className="chat-message-role">Claude</div>
-            <div className="chat-message-content chat-thinking">Thinking...</div>
-          </div>
-        )}
-        {error && (
-          <div className="chat-error">{error}</div>
-        )}
-        <div ref={messagesEndRef} />
-      </div>
+          ))}
+          {loading && (
+            <div className="chat-message chat-message-assistant">
+              <div className="chat-message-role">Claude</div>
+              <div className="chat-message-content chat-thinking">Thinking...</div>
+            </div>
+          )}
+          {error && (
+            <div className="chat-error">{error}</div>
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+      )}
 
       {chatInView && (
         <div className="chat-input-bar">
