@@ -31,7 +31,7 @@ export default function ChatPanel({
     if (!el) return;
     const observer = new IntersectionObserver(
       ([entry]) => setChatInView(entry.isIntersecting),
-      { threshold: 0.1 },
+      { threshold: 0.01 },
     );
     observer.observe(el);
     return () => observer.disconnect();
