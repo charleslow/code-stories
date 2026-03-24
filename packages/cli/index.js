@@ -113,6 +113,12 @@ function cloneRepoForPR(repo, prNumber, host, cli, spinner) {
   return { tempDir, repoId };
 }
 
+// Maximum time (ms) the Claude subprocess may run before being killed.
+const GENERATION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+
+// Maximum time (ms) allowed without any stage progress before aborting.
+const STALL_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+
 // Stage definitions for progress tracking
 const STAGES = [
   { file: 'exploration_scan.md', checkpoint: 'EXPLORATION_SCANNED', label: 'Scanning file tree' },
@@ -187,7 +193,7 @@ function updateManifest(storiesDir, entry) {
 
 // Generate a story
 async function generateStory(query, options = {}) {
-  const { cwd = process.cwd(), repoId = null, prData = null } = options;
+  const { cwd = process.cwd(), repoId = null, prData = null, verbose = false } = options;
 
   ensureDirectories();
 
@@ -208,31 +214,40 @@ async function generateStory(query, options = {}) {
   console.log(`  Commit: ${commitHash.slice(0, 7)}`);
   console.log('');
 
-  const spinner = ora({
-    text: `${STAGES[0].label} (0%)`,
-    prefixText: '  ',
-  }).start();
+  const spinner = verbose
+    ? null
+    : ora({ text: `${STAGES[0].label} (0%)`, prefixText: '  ' }).start();
 
   let currentStage = 0;
+  let lastProgressAt = Date.now();
 
-  // Poll for progress updates
+  // Poll for progress updates and detect stalls
   const progressInterval = setInterval(() => {
     const stage = getCurrentStage(generationDir);
     if (stage !== currentStage && stage < STAGES.length) {
       currentStage = stage;
+      lastProgressAt = Date.now();
       const percent = Math.round((stage / STAGES.length) * 100);
-      spinner.text = `${STAGES[stage].label} (${percent}%)`;
+      if (spinner) {
+        spinner.text = `${STAGES[stage].label} (${percent}%)`;
+      } else {
+        console.log(`  [${percent}%] ${STAGES[stage].label}`);
+      }
     }
   }, 1000);
 
   return new Promise((resolve, reject) => {
     // Spawn Claude CLI
     const allowedTools = 'Read,Grep,Glob,Write';
-    const claude = spawn('claude', [
+    const args = [
       '-p',
       '--allowedTools', allowedTools,
       '--add-dir', generationDir,
-    ], {
+    ];
+    if (verbose) {
+      args.push('--verbose');
+    }
+    const claude = spawn('claude', args, {
       cwd,
       env: Object.fromEntries(
         Object.entries(process.env).filter(([k]) => k !== 'CLAUDECODE')
@@ -245,23 +260,70 @@ async function generateStory(query, options = {}) {
       if (err.code !== 'EPIPE') throw err;
     });
     let stdout = '';
-    claude.stdout.on('data', (data) => { stdout += data.toString(); }); // Consume stdout
+    claude.stdout.on('data', (data) => {
+      const chunk = data.toString();
+      stdout += chunk;
+      if (verbose) {
+        process.stdout.write(chunk);
+      }
+    });
     claude.stdin.write(prompt);
     claude.stdin.end();
 
     let stderr = '';
     claude.stderr.on('data', (data) => {
-      stderr += data.toString();
+      const chunk = data.toString();
+      stderr += chunk;
+      if (verbose) {
+        process.stderr.write(chunk);
+      }
     });
+
+    function fail(message) {
+      if (spinner) spinner.fail(message);
+      else console.error(`  Error: ${message}`);
+    }
+
+    function succeed(message) {
+      if (spinner) spinner.succeed(message);
+      else console.log(`  Done: ${message}`);
+    }
+
+    // Overall generation timeout
+    const generationTimer = setTimeout(() => {
+      clearInterval(progressInterval);
+      clearInterval(stallTimer);
+      claude.kill('SIGTERM');
+      fail(`Generation timed out after ${GENERATION_TIMEOUT_MS / 60_000} minutes.`);
+      reject(new Error('Generation timed out'));
+    }, GENERATION_TIMEOUT_MS);
+
+    // Stall detection — abort if no stage progress for too long
+    const stallTimer = setInterval(() => {
+      const elapsed = Date.now() - lastProgressAt;
+      if (elapsed > STALL_TIMEOUT_MS) {
+        clearInterval(progressInterval);
+        clearInterval(stallTimer);
+        clearTimeout(generationTimer);
+        claude.kill('SIGTERM');
+        const stuckLabel = STAGES[currentStage]?.label || 'unknown stage';
+        fail(`Generation stalled at "${stuckLabel}" for ${Math.round(elapsed / 60_000)} minutes. This may indicate the diff is too large.`);
+        reject(new Error('Generation stalled'));
+      }
+    }, 10_000);
 
     claude.on('error', (error) => {
       clearInterval(progressInterval);
-      spinner.fail(`Failed to spawn Claude CLI: ${error.message}`);
+      clearInterval(stallTimer);
+      clearTimeout(generationTimer);
+      fail(`Failed to spawn Claude CLI: ${error.message}`);
       reject(error);
     });
 
     claude.on('close', (code) => {
       clearInterval(progressInterval);
+      clearInterval(stallTimer);
+      clearTimeout(generationTimer);
 
       // Check if story.json was created
       const storyPath = path.join(generationDir, 'story.json');
@@ -290,15 +352,15 @@ async function generateStory(query, options = {}) {
           // Clean up tmp directory
           fs.rmSync(generationDir, { recursive: true, force: true });
 
-          spinner.succeed(`Story generated: ${story.title}`);
+          succeed(`Story generated: ${story.title}`);
           console.log(`\n  Saved to: ${finalPath}\n`);
           resolve(story);
         } catch (error) {
-          spinner.fail(`Error processing story: ${error.message}`);
+          fail(`Error processing story: ${error.message}`);
           reject(error);
         }
       } else {
-        spinner.fail(`Generation failed - story.json not created (exit code: ${code})`);
+        fail(`Generation failed - story.json not created (exit code: ${code})`);
         console.log(`\n  Check intermediate files in: ${generationDir}\n`);
         if (stderr) {
           console.log(`  stderr: ${stderr.slice(0, 1000)}\n`);
@@ -335,6 +397,7 @@ program
   .argument('[query]', 'Question about the codebase to generate a story for')
   .option('-r, --repo <repo>', 'GitHub or GitLab repository (user/repo or full URL)')
   .option('--pr <number>', 'PR/MR number to review', parseInt)
+  .option('--verbose', 'Show the agent reasoning process for debugging')
   .action(async (query, options) => {
     if (!query && !options.pr) {
       console.error('Error: must provide a query or --pr <number>');
@@ -396,6 +459,7 @@ program
         cwd,
         repoId,
         prData,
+        verbose: !!options.verbose,
       });
     } catch (error) {
       spinner.fail(error.message);

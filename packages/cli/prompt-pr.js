@@ -1,6 +1,41 @@
+import fs from 'fs';
+import path from 'path';
+
+/**
+ * Write per-file diffs into a diffs/ subdirectory inside generationDir.
+ * Returns the path to the diffs directory.
+ */
+function writeDiffFiles(generationDir, diff, rawDiff) {
+  const diffsDir = path.join(generationDir, 'diffs');
+  fs.mkdirSync(diffsDir, { recursive: true });
+
+  // Write each file's diff as a separate file
+  for (const file of diff) {
+    // Sanitize path: replace / with __ to flatten into a single directory
+    const safeName = file.path.replace(/\//g, '__') + '.diff';
+    const hunksText = file.hunks.map(h => {
+      const lines = h.lines.map(l => {
+        if (l.type === 'added') return `+${l.content}`;
+        if (l.type === 'removed') return `-${l.content}`;
+        return ` ${l.content}`;
+      }).join('\n');
+      return `@@ -${h.oldStart} +${h.newStart} @@\n${lines}`;
+    }).join('\n\n');
+    fs.writeFileSync(path.join(diffsDir, safeName), hunksText);
+  }
+
+  // Also write the full raw diff for comprehensive grep
+  fs.writeFileSync(path.join(diffsDir, '_full.diff'), rawDiff);
+
+  return diffsDir;
+}
+
 // Build the prompt for PR review mode
 export function buildPRPrompt(query, generationDir, commitHash, generationId, repoId, prData) {
   const { metadata, diff, rawDiff } = prData;
+
+  // Write diffs to files so the agent can grep through them
+  const diffsDir = writeDiffFiles(generationDir, diff, rawDiff);
 
   const jsonSchema = `{
   "id": "string (UUID)",
@@ -101,10 +136,12 @@ ${diffSummary}
 ${commentsSection}
 ${linkedIssuesSection ? `\n### Linked Issues\n${linkedIssuesSection}` : ''}
 
-### Full Diff
-\`\`\`diff
-${rawDiff}
-\`\`\`
+### Diffs
+
+Per-file diffs have been written to: ${diffsDir}
+- Each changed file has its own \`.diff\` file (e.g., \`src__utils__foo.js.diff\`)
+- The full combined diff is in \`_full.diff\`
+- Use Grep and Read to explore the diffs as needed — do NOT try to read them all at once for large PRs
 
 You will produce a single JSON object matching this schema:
 ${jsonSchema}
