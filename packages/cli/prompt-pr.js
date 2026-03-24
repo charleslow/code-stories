@@ -1,3 +1,28 @@
+// Maximum number of lines to include from the raw diff in the prompt.
+// Large diffs can exceed Claude's context window and cause generation to stall.
+const MAX_DIFF_LINES = 1500;
+
+/**
+ * Truncate a raw diff to MAX_DIFF_LINES, splitting at file boundaries when possible.
+ */
+function truncateDiff(rawDiff) {
+  const lines = rawDiff.split('\n');
+  if (lines.length <= MAX_DIFF_LINES) return rawDiff;
+
+  // Find the last file boundary ("diff --git") that fits within the limit
+  let cutoff = MAX_DIFF_LINES;
+  for (let i = MAX_DIFF_LINES - 1; i > 0; i--) {
+    if (lines[i].startsWith('diff --git ')) {
+      cutoff = i;
+      break;
+    }
+  }
+
+  const truncated = lines.slice(0, cutoff).join('\n');
+  const omittedLines = lines.length - cutoff;
+  return `${truncated}\n\n... (${omittedLines} lines omitted — diff too large. Use Read/Grep to inspect full files as needed.)`;
+}
+
 // Build the prompt for PR review mode
 export function buildPRPrompt(query, generationDir, commitHash, generationId, repoId, prData) {
   const { metadata, diff, rawDiff } = prData;
@@ -103,7 +128,7 @@ ${linkedIssuesSection ? `\n### Linked Issues\n${linkedIssuesSection}` : ''}
 
 ### Full Diff
 \`\`\`diff
-${rawDiff}
+${truncateDiff(rawDiff)}
 \`\`\`
 
 You will produce a single JSON object matching this schema:

@@ -113,6 +113,12 @@ function cloneRepoForPR(repo, prNumber, host, cli, spinner) {
   return { tempDir, repoId };
 }
 
+// Maximum time (ms) the Claude subprocess may run before being killed.
+const GENERATION_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+
+// Maximum time (ms) allowed without any stage progress before aborting.
+const STALL_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
 // Stage definitions for progress tracking
 const STAGES = [
   { file: 'exploration_scan.md', checkpoint: 'EXPLORATION_SCANNED', label: 'Scanning file tree' },
@@ -214,12 +220,14 @@ async function generateStory(query, options = {}) {
   }).start();
 
   let currentStage = 0;
+  let lastProgressAt = Date.now();
 
-  // Poll for progress updates
+  // Poll for progress updates and detect stalls
   const progressInterval = setInterval(() => {
     const stage = getCurrentStage(generationDir);
     if (stage !== currentStage && stage < STAGES.length) {
       currentStage = stage;
+      lastProgressAt = Date.now();
       const percent = Math.round((stage / STAGES.length) * 100);
       spinner.text = `${STAGES[stage].label} (${percent}%)`;
     }
@@ -254,14 +262,41 @@ async function generateStory(query, options = {}) {
       stderr += data.toString();
     });
 
+    // Overall generation timeout
+    const generationTimer = setTimeout(() => {
+      clearInterval(progressInterval);
+      clearInterval(stallTimer);
+      claude.kill('SIGTERM');
+      spinner.fail(`Generation timed out after ${GENERATION_TIMEOUT_MS / 60_000} minutes.`);
+      reject(new Error('Generation timed out'));
+    }, GENERATION_TIMEOUT_MS);
+
+    // Stall detection — abort if no stage progress for too long
+    const stallTimer = setInterval(() => {
+      const elapsed = Date.now() - lastProgressAt;
+      if (elapsed > STALL_TIMEOUT_MS) {
+        clearInterval(progressInterval);
+        clearInterval(stallTimer);
+        clearTimeout(generationTimer);
+        claude.kill('SIGTERM');
+        const stuckLabel = STAGES[currentStage]?.label || 'unknown stage';
+        spinner.fail(`Generation stalled at "${stuckLabel}" for ${Math.round(elapsed / 60_000)} minutes. This may indicate the diff is too large.`);
+        reject(new Error('Generation stalled'));
+      }
+    }, 10_000);
+
     claude.on('error', (error) => {
       clearInterval(progressInterval);
+      clearInterval(stallTimer);
+      clearTimeout(generationTimer);
       spinner.fail(`Failed to spawn Claude CLI: ${error.message}`);
       reject(error);
     });
 
     claude.on('close', (code) => {
       clearInterval(progressInterval);
+      clearInterval(stallTimer);
+      clearTimeout(generationTimer);
 
       // Check if story.json was created
       const storyPath = path.join(generationDir, 'story.json');
