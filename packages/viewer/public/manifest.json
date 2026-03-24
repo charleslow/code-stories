@@ -1,6 +1,7 @@
 {
   "name": "Code Stories",
   "short_name": "Code Stories",
+  "id": "/code-stories",
   "description": "Interactive code walkthrough stories",
   "start_url": "/",
   "display": "standalone",
