@@ -129,8 +129,7 @@ export default function ChatPanel({
         </div>
       )}
 
-      {chatInView && (
-        <div className="chat-input-bar">
+      <div className="chat-input-bar">
           <textarea
             ref={inputRef}
             className="chat-input"
@@ -149,7 +148,6 @@ export default function ChatPanel({
             Send
           </button>
         </div>
-      )}
     </div>
   );
 }
