@@ -125,12 +125,10 @@ export function ChapterDisplay({ chapter, currentIndex, totalChapters, onPrev, o
           </div>
         )}
         {(!isMobile || activeTab === 'explanation') && (
-          <div style={isMobile ? { flex: '1 1 100%', display: 'flex', flexDirection: 'column', overflowY: 'auto' } : { flex: `0 0 ${100 - codePanelPercent}%`, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <div style={{ flex: '1 1 auto', overflowY: 'auto', minHeight: 0 }}>
-              <ExplanationPanel
-                explanation={chapter.explanation}
-              />
-            </div>
+          <div style={isMobile ? { flex: '1 1 100%', display: 'flex', flexDirection: 'column', overflowY: 'auto' } : { flex: `0 0 ${100 - codePanelPercent}%`, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
+            <ExplanationPanel
+              explanation={chapter.explanation}
+            />
             {chatAvailable && storyId && !isMobile && (
               <ChatPanel storyId={storyId} chapterId={chapter.id} />
             )}
