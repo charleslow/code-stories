@@ -23,13 +23,15 @@ const MAX_PANEL_PERCENT = 70;
 const mobileQuery = '(max-width: 768px)';
 
 function useIsMobile() {
+  const forceMobile = new URLSearchParams(window.location.search).get('mobile') === '1';
   return useSyncExternalStore(
     (cb) => {
+      if (forceMobile) return () => {};
       const mql = window.matchMedia(mobileQuery);
       mql.addEventListener('change', cb);
       return () => mql.removeEventListener('change', cb);
     },
-    () => window.matchMedia(mobileQuery).matches,
+    () => forceMobile || window.matchMedia(mobileQuery).matches,
   );
 }
 
