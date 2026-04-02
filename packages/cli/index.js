@@ -117,7 +117,7 @@ function cloneRepoForPR(repo, prNumber, host, cli, spinner) {
 const GENERATION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
 // Maximum time (ms) allowed without any stage progress before aborting.
-const STALL_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+const STALL_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutes
 
 // Stage definitions for progress tracking
 const STAGES = [
