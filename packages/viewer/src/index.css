@@ -1264,6 +1264,7 @@ body {
   gap: 0.375rem;
   max-width: 85%;
   overflow: hidden;
+  flex-shrink: 0; /* prevent messages from being squished on mobile */
 }
 
 .chat-message-user {

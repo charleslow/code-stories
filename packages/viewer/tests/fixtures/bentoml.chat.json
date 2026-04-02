@@ -1,0 +1,17 @@
+{
+  "storyId": "22a3e76c-1d4e-40f2-91f4-4b924cb05359",
+  "chapters": {
+    "chapter-0": [
+      { "role": "user", "content": "What is BentoML used for?", "timestamp": "2026-01-01T00:00:00Z" },
+      { "role": "assistant", "content": "BentoML is a framework that turns ML models into production-ready HTTP services. It bridges the gap between a working model in a notebook and a reliable, scalable API by providing decorator-driven abstractions for routing, batching, containerization, and observability.", "timestamp": "2026-01-01T00:00:01Z" },
+      { "role": "user", "content": "How does the decorator approach work?", "timestamp": "2026-01-01T00:00:02Z" },
+      { "role": "assistant", "content": "You annotate a Python class with `@bentoml.service` to make it a deployable unit, then mark individual methods with `@bentoml.api` to expose them as HTTP endpoints. The framework reads type annotations to auto-generate Pydantic request/response schemas, so you get validation and OpenAPI docs for free.", "timestamp": "2026-01-01T00:00:03Z" },
+      { "role": "user", "content": "What about batching?", "timestamp": "2026-01-01T00:00:04Z" },
+      { "role": "assistant", "content": "BentoML supports **adaptive batching** via the `CorkDispatcher`. When multiple inference requests arrive concurrently, the dispatcher groups them into GPU-efficient batches dynamically. The batch size adapts based on current load and latency targets, so you get high throughput without manual tuning.\n\nKey parameters you can set on `@bentoml.api`:\n- `batchable=True` to enable batching\n- `batch_dim` to specify which tensor dimension to batch along\n- `max_batch_size` and `max_latency_ms` for fine-tuning", "timestamp": "2026-01-01T00:00:05Z" },
+      { "role": "user", "content": "Can you explain the service composition feature?", "timestamp": "2026-01-01T00:00:06Z" },
+      { "role": "assistant", "content": "Service composition lets you build microservice architectures where one service depends on another. You declare dependencies using `bentoml.depends()`, and BentoML handles the wiring automatically. Each dependent service runs in its own process with its own resource allocation, but they communicate seamlessly via inter-process calls rather than HTTP, which keeps latency low.", "timestamp": "2026-01-01T00:00:07Z" },
+      { "role": "user", "content": "How does deployment work?", "timestamp": "2026-01-01T00:00:08Z" },
+      { "role": "assistant", "content": "Deployment involves building a **Bento** — a versioned, immutable artifact that packages your code, models, dependencies, and configuration. The `Image` class generates optimized Dockerfiles with proper CUDA support, multi-stage builds, and caching. The Circus process manager handles multi-worker orchestration in production, and the `ResourceAllocator` manages GPU assignment across workers.", "timestamp": "2026-01-01T00:00:09Z" }
+    ]
+  }
+}
