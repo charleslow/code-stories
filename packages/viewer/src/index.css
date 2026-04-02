@@ -1496,6 +1496,10 @@ body {
   min-height: 0;
 }
 
+.chat-panel-fullscreen .chat-message {
+  max-width: 95%;
+}
+
 .chat-panel-fullscreen .chat-input-bar {
   position: static;
 }
