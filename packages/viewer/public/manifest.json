@@ -1,7 +1,7 @@
 {
   "name": "Code Stories",
   "short_name": "Code Stories",
-  "id": "/code-stories",
+  "id": "https://code-stories.pwa",
   "description": "Interactive code walkthrough stories",
   "start_url": "/",
   "display": "standalone",
