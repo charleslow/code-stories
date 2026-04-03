@@ -60,11 +60,11 @@ function localStoriesMiddleware(req: any, res: any, next: any) {
 export default defineConfig({
   base: './',  // Relative paths — Tailscale Serve strips the /code-stories prefix
   server: {
-    host: '127.0.0.1',
+    host: '0.0.0.0',
     allowedHosts: true,
   },
   preview: {
-    host: '127.0.0.1',
+    host: '0.0.0.0',
     port: 5173,
     allowedHosts: true,
   },
