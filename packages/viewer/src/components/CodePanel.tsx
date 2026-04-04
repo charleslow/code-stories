@@ -1,5 +1,64 @@
-import { Highlight, themes } from 'prism-react-renderer';
+import { Highlight, themes, Prism } from 'prism-react-renderer';
 import type { CodeSnippet, PRMetadata, DiffLine } from '../types';
+
+// Register languages missing from prism-react-renderer's default bundle.
+// Java extends clike (bundled) — covers keywords, annotations, generics, etc.
+if (!Prism.languages.java) {
+  Prism.languages.java = Prism.languages.extend('clike', {
+    'class-name': [
+      /\b[A-Z]\w*(?:\s*\.\s*[A-Z]\w*)*\b/,
+      /\b[A-Z]\w*(?=\s+\w+\s*[;,=())])/,
+    ],
+    keyword: /\b(?:abstract|assert|boolean|break|byte|case|catch|char|class|const|continue|default|do|double|else|enum|extends|final|finally|float|for|goto|if|implements|import|instanceof|int|interface|long|native|new|package|private|protected|public|record|return|sealed|short|static|strictfp|super|switch|synchronized|this|throw|throws|transient|try|var|void|volatile|while|yield)\b/,
+    number: /\b0b[01][01_]*L?\b|\b0x(?:[\da-f_]*\.)?[\da-f_p+-]+\b|(?:\b\d[\d_]*(?:\.[\d_]*)?|\B\.[\d_]+)(?:e[+-]?\d[\d_]*)?[dfl]?\b/i,
+    operator: {
+      pattern: /(^|[^.])(?:<<=?|>>>?=?|->|--|\+\+|&&|\|\||::|[?:~]|[-+*/%&|^!=<>]=?)/m,
+      lookbehind: true,
+    },
+    annotation: {
+      pattern: /@\w+(?:\.\w+)*/,
+      alias: 'punctuation',
+    },
+  });
+}
+
+if (!Prism.languages.ruby) {
+  Prism.languages.ruby = Prism.languages.extend('clike', {
+    comment: { pattern: /#.*|^=begin\s[\s\S]*?^=end/m, greedy: true },
+    'class-name': {
+      pattern: /(\b(?:class|module)\s+|\bcatch\s+\()[\w.\\]+/i,
+      lookbehind: true,
+      inside: { punctuation: /[.\\]/ },
+    },
+    keyword: /\b(?:BEGIN|END|alias|and|begin|break|case|class|def|define_method|defined|do|each|else|elsif|end|ensure|extend|for|if|in|include|module|new|next|nil|not|or|prepend|private|protected|public|raise|redo|require|rescue|retry|return|self|send|super|then|throw|unless|until|when|while|yield)\b/,
+    string: [
+      { pattern: /"""[\s\S]*?"""|'''[\s\S]*?'''/, greedy: true },
+      { pattern: /%[qQiIwWs]?\([^)]*\)/, greedy: true },
+      { pattern: /("|')(?:#\{[^}]+\}|\\.|(?!\1)[^\\\r\n])*\1/, greedy: true },
+    ],
+    symbol: { pattern: /(^|[^:]):[\w_]+/, lookbehind: true },
+    number: /\b(?:0[box][\da-f_]+|\d[\d_]*(?:\.[\d_]+)?(?:e[+-]?\d[\d_]+)?)\b/i,
+    operator: /\.{2,3}|&\.|===|<=>|[!=]~|(?:&&|\|\||<<|>>|\*\*|[+\-*/%<>&|^!~])=?|[?:]/,
+    punctuation: /[(){}[\];,]/,
+  });
+}
+
+if (!Prism.languages.bash) {
+  Prism.languages.bash = {
+    comment: { pattern: /(^|[^\\])#.*/, lookbehind: true },
+    'function': { pattern: /(^|[\s;|&])(?:alias|bg|bind|builtin|caller|cd|command|compgen|complete|declare|dirs|disown|echo|enable|eval|exec|exit|export|fc|fg|getopts|hash|help|history|jobs|kill|let|local|logout|mapfile|popd|printf|pushd|pwd|read|readarray|readonly|return|set|shift|shopt|source|suspend|test|times|trap|type|typeset|ulimit|umask|unalias|unset|wait)\b/, lookbehind: true, alias: 'builtin' },
+    keyword: { pattern: /(^|[\s;|&])(?:if|then|else|elif|fi|for|while|until|do|done|in|case|esac|function|select)\b/, lookbehind: true },
+    variable: /\$(?:\w+|[!#?*@$]|\{[^}]+\})/,
+    string: [
+      { pattern: /\$'(?:[^'\\]|\\.)*'/, greedy: true },
+      { pattern: /("|')(?:\\[\s\S]|\$\([^)]+\)|\$(?!\()|`[^`]+`|(?!\1)[^\\`$])*\1/, greedy: true },
+    ],
+    number: { pattern: /(^|\s)(?:[1-9]\d*|0)(?:[.,]\d+)?\b/, lookbehind: true },
+    operator: /&&|\|\||[!=<>]=?|[<>]|[-+*/%]=?|={1,2}/,
+    punctuation: /\$?\(\(?|\)\)?|\.\.|[{}[\];\\]/,
+  };
+  Prism.languages.shell = Prism.languages.bash;
+}
 
 const EXT_TO_LANGUAGE: Record<string, string> = {
   '.py': 'python', '.js': 'javascript', '.ts': 'typescript', '.tsx': 'typescript',
