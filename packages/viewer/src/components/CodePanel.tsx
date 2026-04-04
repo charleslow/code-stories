@@ -1,6 +1,14 @@
 import { Highlight, themes } from 'prism-react-renderer';
 import type { CodeSnippet, PRMetadata, DiffLine } from '../types';
 
+// Register Java, Ruby, and Bash grammars missing from prism-react-renderer's
+// default bundle. The setup module exposes the Prism instance globally so the
+// prismjs IIFE grammar files attach to the right object.
+import '../prism-setup';
+import 'prismjs/components/prism-java';
+import 'prismjs/components/prism-ruby';
+import 'prismjs/components/prism-bash';
+
 const EXT_TO_LANGUAGE: Record<string, string> = {
   '.py': 'python', '.js': 'javascript', '.ts': 'typescript', '.tsx': 'typescript',
   '.jsx': 'jsx', '.rs': 'rust', '.go': 'go', '.java': 'java',
