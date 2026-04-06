@@ -191,6 +191,31 @@ function updateManifest(storiesDir, entry) {
   }
 }
 
+// Validate, copy to stories dir, update manifest, and clean up tmp.
+// Returns the story object on success, throws on failure.
+function finalizeStory(generationDir) {
+  const storyPath = path.join(generationDir, 'story.json');
+  const story = JSON.parse(fs.readFileSync(storyPath, 'utf-8'));
+
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!story.id || !uuidRegex.test(story.id)) {
+    throw new Error(`Invalid story ID: "${story.id}" is not a valid UUID`);
+  }
+
+  const finalPath = path.join(STORIES_DIR, `${story.id}.json`);
+  fs.writeFileSync(finalPath, JSON.stringify(story, null, 2));
+
+  updateManifest(STORIES_DIR, {
+    id: story.id,
+    title: story.title,
+    commitHash: story.commitHash,
+    createdAt: story.createdAt,
+  });
+
+  fs.rmSync(generationDir, { recursive: true, force: true });
+  return { story, finalPath };
+}
+
 // Find a generation directory by ID or prefix
 function findGenerationDir(idOrPrefix) {
   if (!fs.existsSync(TMP_DIR)) {
@@ -256,28 +281,18 @@ function listIncompleteGenerations() {
 function buildResumePrompt(generationDir, meta) {
   const completedStage = getCurrentStage(generationDir);
 
-  // Gather all completed intermediate file contents
-  const completedFiles = [];
-  for (let i = 0; i < completedStage && i < STAGES.length; i++) {
-    const { file } = STAGES[i];
-    const filePath = path.join(generationDir, file);
-    if (fs.existsSync(filePath)) {
-      completedFiles.push({ name: file, content: fs.readFileSync(filePath, 'utf-8') });
-    }
-  }
+  // Gather completed + any partial intermediate file contents
+  const completedFiles = STAGES.slice(0, completedStage)
+    .map(({ file }) => ({ name: file, path: path.join(generationDir, file) }))
+    .filter(f => fs.existsSync(f.path))
+    .map(f => ({ name: f.name, content: fs.readFileSync(f.path, 'utf-8') }));
 
-  // Check for partially written files (stage started but not completed)
   if (completedStage < STAGES.length) {
-    const nextStage = STAGES[completedStage];
-    const partialPath = path.join(generationDir, nextStage.file);
+    const partialPath = path.join(generationDir, STAGES[completedStage].file);
     if (fs.existsSync(partialPath)) {
       const content = fs.readFileSync(partialPath, 'utf-8');
-      if (content.trim().length > 0) {
-        completedFiles.push({
-          name: nextStage.file,
-          content,
-          partial: true,
-        });
+      if (content.trim()) {
+        completedFiles.push({ name: STAGES[completedStage].file, content, partial: true });
       }
     }
   }
@@ -287,11 +302,8 @@ function buildResumePrompt(generationDir, meta) {
     return `### ${f.name}${tag}\n\`\`\`\n${f.content}\n\`\`\``;
   }).join('\n\n');
 
-  // Determine which stages remain
-  const remainingStages = [];
-  for (let i = completedStage; i < STAGES.length; i++) {
-    remainingStages.push(`Stage ${i + 1}: ${STAGES[i].label}`);
-  }
+  const remainingStages = STAGES.slice(completedStage)
+    .map((s, i) => `Stage ${completedStage + i + 1}: ${s.label}`);
 
   // Use the original prompt builder to get the full prompt, then wrap it
   const isPR = meta.isPR && meta.prData;
@@ -452,12 +464,18 @@ async function generateStory(query, options = {}) {
       else console.log(`  Done: ${message}`);
     }
 
-    // Overall generation timeout
-    const generationTimer = setTimeout(() => {
+    const genId = path.basename(generationDir);
+
+    function clearTimers() {
       clearInterval(progressInterval);
       clearInterval(stallTimer);
+      clearTimeout(generationTimer);
+    }
+
+    // Overall generation timeout
+    const generationTimer = setTimeout(() => {
+      clearTimers();
       claude.kill('SIGTERM');
-      const genId = path.basename(generationDir);
       fail(`Generation timed out after ${GENERATION_TIMEOUT_MS / 60_000} minutes. Resume with: code-stories --resume ${genId}`);
       reject(new Error('Generation timed out'));
     }, GENERATION_TIMEOUT_MS);
@@ -466,57 +484,28 @@ async function generateStory(query, options = {}) {
     const stallTimer = setInterval(() => {
       const elapsed = Date.now() - lastProgressAt;
       if (elapsed > STALL_TIMEOUT_MS) {
-        clearInterval(progressInterval);
-        clearInterval(stallTimer);
-        clearTimeout(generationTimer);
+        clearTimers();
         claude.kill('SIGTERM');
         const stuckLabel = STAGES[currentStage]?.label || 'unknown stage';
-        const genId = path.basename(generationDir);
         fail(`Generation stalled at "${stuckLabel}" for ${Math.round(elapsed / 60_000)} minutes. Resume with: code-stories --resume ${genId}`);
         reject(new Error('Generation stalled'));
       }
     }, 10_000);
 
     claude.on('error', (error) => {
-      clearInterval(progressInterval);
-      clearInterval(stallTimer);
-      clearTimeout(generationTimer);
+      clearTimers();
       fail(`Failed to spawn Claude CLI: ${error.message}`);
       reject(error);
     });
 
     claude.on('close', (code) => {
-      clearInterval(progressInterval);
-      clearInterval(stallTimer);
-      clearTimeout(generationTimer);
+      clearTimers();
 
       // Check if story.json was created
       const storyPath = path.join(generationDir, 'story.json');
       if (fs.existsSync(storyPath)) {
         try {
-          const story = JSON.parse(fs.readFileSync(storyPath, 'utf-8'));
-
-          // Validate story.id is a proper UUID
-          const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-          if (!story.id || !uuidRegex.test(story.id)) {
-            throw new Error(`Invalid story ID: "${story.id}" is not a valid UUID. Expected format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`);
-          }
-
-          // Copy to stories directory
-          const finalPath = path.join(STORIES_DIR, `${story.id}.json`);
-          fs.writeFileSync(finalPath, JSON.stringify(story, null, 2));
-
-          // Update manifest (with file locking for concurrent safety)
-          updateManifest(STORIES_DIR, {
-            id: story.id,
-            title: story.title,
-            commitHash: story.commitHash,
-            createdAt: story.createdAt,
-          });
-
-          // Clean up tmp directory
-          fs.rmSync(generationDir, { recursive: true, force: true });
-
+          const { story, finalPath } = finalizeStory(generationDir);
           succeed(`Story generated: ${story.title}`);
           console.log(`\n  Saved to: ${finalPath}\n`);
           resolve(story);
@@ -525,7 +514,6 @@ async function generateStory(query, options = {}) {
           reject(error);
         }
       } else {
-        const genId = path.basename(generationDir);
         fail(`Generation failed - story.json not created (exit code: ${code})`);
         console.log(`\n  Check intermediate files in: ${generationDir}`);
         console.log(`  To resume: code-stories --resume ${genId}\n`);
@@ -613,32 +601,15 @@ program
       const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
       const currentStageNum = getCurrentStage(generationDir);
 
-      if (currentStageNum >= STAGES.length) {
-        // story.json exists — try to finalize
-        const storyPath = path.join(generationDir, 'story.json');
-        if (fs.existsSync(storyPath)) {
-          console.log('\n  Story appears complete! Finalizing...\n');
-          try {
-            const story = JSON.parse(fs.readFileSync(storyPath, 'utf-8'));
-            const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-            if (!story.id || !uuidRegex.test(story.id)) {
-              throw new Error(`Invalid story ID: "${story.id}"`);
-            }
-            const finalPath = path.join(STORIES_DIR, `${story.id}.json`);
-            fs.writeFileSync(finalPath, JSON.stringify(story, null, 2));
-            updateManifest(STORIES_DIR, {
-              id: story.id,
-              title: story.title,
-              commitHash: story.commitHash,
-              createdAt: story.createdAt,
-            });
-            fs.rmSync(generationDir, { recursive: true, force: true });
-            console.log(`  Story saved: ${finalPath}\n`);
-            process.exit(0);
-          } catch (error) {
-            console.error(`  Error finalizing: ${error.message}`);
-            process.exit(1);
-          }
+      if (currentStageNum >= STAGES.length && fs.existsSync(path.join(generationDir, 'story.json'))) {
+        console.log('\n  Story appears complete! Finalizing...\n');
+        try {
+          const { finalPath } = finalizeStory(generationDir);
+          console.log(`  Story saved: ${finalPath}\n`);
+          process.exit(0);
+        } catch (error) {
+          console.error(`  Error finalizing: ${error.message}`);
+          process.exit(1);
         }
       }
 
