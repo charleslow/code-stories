@@ -16,12 +16,19 @@ cd my-project
 
 # Generate a story
 code-stories "How does the authentication flow work?"
+
+# Resume an interrupted story
+code-stories --resume              # list incomplete stories
+code-stories --resume <id>         # resume by generation ID (prefix match supported)
 ```
 
 The CLI will:
 1. Analyze your codebase using Claude
 2. Create a multi-chapter narrative explaining the code
 3. Save the story as JSON in `./stories/{id}.json`
+
+If a generation times out or is interrupted, the intermediate progress is preserved
+and you can pick up where it left off with `--resume`.
 
 ## Output
 
@@ -52,12 +59,15 @@ Or load any story JSON URL directly: `https://charleslow.github.io/code-stories/
 
 ## How It Works
 
-The CLI uses a 5-stage generation pipeline:
+The CLI uses a 6-stage generation pipeline:
 
 1. **Explore** - Understand the codebase structure
 2. **Outline** - Create a narrative structure
 3. **Review** - Refine the flow and pacing
 4. **Identify Snippets** - Select exact code to display
 5. **Craft Explanations** - Write context-aware prose
+6. **Quality Check & Finalize** - Validate constraints and output JSON
 
-Each stage produces intermediate files that are cleaned up on success.
+Each stage produces checkpointed intermediate files in `stories/.tmp/<id>/`.
+On success these are cleaned up. On failure they're preserved so you can resume
+with `--resume`.
