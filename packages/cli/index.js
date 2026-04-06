@@ -191,34 +191,197 @@ function updateManifest(storiesDir, entry) {
   }
 }
 
+// Find a generation directory by ID or prefix
+function findGenerationDir(idOrPrefix) {
+  if (!fs.existsSync(TMP_DIR)) {
+    return null;
+  }
+  const entries = fs.readdirSync(TMP_DIR);
+
+  // Exact match first
+  if (entries.includes(idOrPrefix)) {
+    return path.join(TMP_DIR, idOrPrefix);
+  }
+
+  // Prefix match
+  const matches = entries.filter(e => e.startsWith(idOrPrefix));
+  if (matches.length === 1) {
+    return path.join(TMP_DIR, matches[0]);
+  }
+  if (matches.length > 1) {
+    throw new Error(
+      `Ambiguous ID prefix "${idOrPrefix}" matches ${matches.length} generations:\n` +
+      matches.map(m => `  ${m}`).join('\n')
+    );
+  }
+
+  return null;
+}
+
+// List all incomplete generations in .tmp/
+function listIncompleteGenerations() {
+  if (!fs.existsSync(TMP_DIR)) return [];
+
+  const entries = fs.readdirSync(TMP_DIR);
+  const results = [];
+
+  for (const entry of entries) {
+    const dir = path.join(TMP_DIR, entry);
+    if (!fs.statSync(dir).isDirectory()) continue;
+
+    const metaPath = path.join(dir, 'metadata.json');
+    const stage = getCurrentStage(dir);
+    const stageLabel = stage < STAGES.length ? STAGES[stage].label : 'Complete';
+
+    let meta = null;
+    if (fs.existsSync(metaPath)) {
+      try { meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8')); } catch {}
+    }
+
+    results.push({
+      id: entry,
+      query: meta?.query || '(unknown)',
+      repo: meta?.repoId || null,
+      isPR: meta?.isPR || false,
+      stage,
+      stageLabel,
+      createdAt: meta?.createdAt || fs.statSync(dir).birthtime.toISOString(),
+    });
+  }
+
+  return results.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+// Build a resume prompt that includes completed intermediate files
+function buildResumePrompt(generationDir, meta) {
+  const completedStage = getCurrentStage(generationDir);
+
+  // Gather all completed intermediate file contents
+  const completedFiles = [];
+  for (let i = 0; i < completedStage && i < STAGES.length; i++) {
+    const { file } = STAGES[i];
+    const filePath = path.join(generationDir, file);
+    if (fs.existsSync(filePath)) {
+      completedFiles.push({ name: file, content: fs.readFileSync(filePath, 'utf-8') });
+    }
+  }
+
+  // Check for partially written files (stage started but not completed)
+  if (completedStage < STAGES.length) {
+    const nextStage = STAGES[completedStage];
+    const partialPath = path.join(generationDir, nextStage.file);
+    if (fs.existsSync(partialPath)) {
+      const content = fs.readFileSync(partialPath, 'utf-8');
+      if (content.trim().length > 0) {
+        completedFiles.push({
+          name: nextStage.file,
+          content,
+          partial: true,
+        });
+      }
+    }
+  }
+
+  const filesSection = completedFiles.map(f => {
+    const tag = f.partial ? ' (PARTIAL — not yet completed)' : ' (COMPLETED)';
+    return `### ${f.name}${tag}\n\`\`\`\n${f.content}\n\`\`\``;
+  }).join('\n\n');
+
+  // Determine which stages remain
+  const remainingStages = [];
+  for (let i = completedStage; i < STAGES.length; i++) {
+    remainingStages.push(`Stage ${i + 1}: ${STAGES[i].label}`);
+  }
+
+  // Use the original prompt builder to get the full prompt, then wrap it
+  const isPR = meta.isPR && meta.prData;
+  const originalPrompt = isPR
+    ? buildPRPrompt(meta.query, generationDir, meta.commitHash, meta.generationId, meta.repoId, meta.prData)
+    : buildPrompt(meta.query, generationDir, meta.commitHash, meta.generationId, meta.repoId);
+
+  return `${originalPrompt}
+
+## IMPORTANT: This is a RESUME of a previously interrupted generation
+
+The previous generation was interrupted at stage ${completedStage + 1} of ${STAGES.length}.
+The following intermediate files have already been produced. Do NOT redo completed work.
+Instead, read the completed files below, pick up from where things left off, and continue
+through the remaining stages to completion.
+
+### Completed progress (${completedStage} of ${STAGES.length - 1} stages done)
+
+${filesSection}
+
+### Remaining work
+${remainingStages.map(s => `- ${s}`).join('\n')}
+
+**Resume instructions:**
+1. Read and internalize ALL the completed intermediate files above — they represent
+   significant work that should not be discarded or redone.
+2. If there is a partial file, complete it first (keep what's good, fix or extend as needed).
+3. Continue with the remaining stages in order.
+4. The final output must still be a valid story.json written to ${generationDir}/story.json.
+5. Do NOT rewrite completed checkpoint files — they are already done.`;
+}
+
 // Generate a story
 async function generateStory(query, options = {}) {
-  const { cwd = process.cwd(), repoId = null, prData = null, verbose = false } = options;
+  const { cwd = process.cwd(), repoId = null, prData = null, verbose = false, resume = null } = options;
 
   ensureDirectories();
 
-  const generationId = uuidv4();
-  const generationDir = path.join(TMP_DIR, generationId);
-  fs.mkdirSync(generationDir, { recursive: true });
+  let generationId, generationDir, commitHash, prompt;
 
-  const commitHash = getCommitHash(cwd);
-  const prompt = prData
-    ? buildPRPrompt(query, generationDir, commitHash, generationId, repoId, prData)
-    : buildPrompt(query, generationDir, commitHash, generationId, repoId);
+  if (resume) {
+    // Resume mode: reuse existing generation directory
+    generationDir = resume.generationDir;
+    generationId = resume.meta.generationId;
+    commitHash = resume.meta.commitHash;
+    prompt = buildResumePrompt(generationDir, resume.meta);
+  } else {
+    // Normal mode: create new generation
+    generationId = uuidv4();
+    generationDir = path.join(TMP_DIR, generationId);
+    fs.mkdirSync(generationDir, { recursive: true });
 
-  console.log('\n  Code Stories Generator\n');
-  if (repoId) {
-    console.log(`  Repo: ${repoId}`);
+    commitHash = getCommitHash(cwd);
+
+    // Save metadata for potential future resume
+    const meta = {
+      generationId,
+      query,
+      commitHash,
+      repoId,
+      isPR: !!prData,
+      prData: prData || null,
+      createdAt: new Date().toISOString(),
+    };
+    fs.writeFileSync(path.join(generationDir, 'metadata.json'), JSON.stringify(meta, null, 2));
+
+    prompt = prData
+      ? buildPRPrompt(query, generationDir, commitHash, generationId, repoId, prData)
+      : buildPrompt(query, generationDir, commitHash, generationId, repoId);
   }
-  console.log(`  Query: "${query}"`);
-  console.log(`  Commit: ${commitHash.slice(0, 7)}`);
-  console.log('');
+
+  if (!resume) {
+    console.log('\n  Code Stories Generator\n');
+    if (repoId) {
+      console.log(`  Repo: ${repoId}`);
+    }
+    console.log(`  Query: "${query}"`);
+    console.log(`  Commit: ${commitHash.slice(0, 7)}`);
+    console.log('');
+  }
+
+  const initialStage = resume ? getCurrentStage(resume.generationDir) : 0;
+  const initialPercent = Math.round((initialStage / STAGES.length) * 100);
+  const initialLabel = initialStage < STAGES.length ? STAGES[initialStage].label : 'Finalizing';
 
   const spinner = verbose
     ? null
-    : ora({ text: `${STAGES[0].label} (0%)`, prefixText: '  ' }).start();
+    : ora({ text: `${initialLabel} (${initialPercent}%)`, prefixText: '  ' }).start();
 
-  let currentStage = 0;
+  let currentStage = initialStage;
   let lastProgressAt = Date.now();
 
   // Poll for progress updates and detect stalls
@@ -294,7 +457,8 @@ async function generateStory(query, options = {}) {
       clearInterval(progressInterval);
       clearInterval(stallTimer);
       claude.kill('SIGTERM');
-      fail(`Generation timed out after ${GENERATION_TIMEOUT_MS / 60_000} minutes.`);
+      const genId = path.basename(generationDir);
+      fail(`Generation timed out after ${GENERATION_TIMEOUT_MS / 60_000} minutes. Resume with: code-stories --resume ${genId}`);
       reject(new Error('Generation timed out'));
     }, GENERATION_TIMEOUT_MS);
 
@@ -307,7 +471,8 @@ async function generateStory(query, options = {}) {
         clearTimeout(generationTimer);
         claude.kill('SIGTERM');
         const stuckLabel = STAGES[currentStage]?.label || 'unknown stage';
-        fail(`Generation stalled at "${stuckLabel}" for ${Math.round(elapsed / 60_000)} minutes. This may indicate the diff is too large.`);
+        const genId = path.basename(generationDir);
+        fail(`Generation stalled at "${stuckLabel}" for ${Math.round(elapsed / 60_000)} minutes. Resume with: code-stories --resume ${genId}`);
         reject(new Error('Generation stalled'));
       }
     }, 10_000);
@@ -360,8 +525,10 @@ async function generateStory(query, options = {}) {
           reject(error);
         }
       } else {
+        const genId = path.basename(generationDir);
         fail(`Generation failed - story.json not created (exit code: ${code})`);
-        console.log(`\n  Check intermediate files in: ${generationDir}\n`);
+        console.log(`\n  Check intermediate files in: ${generationDir}`);
+        console.log(`  To resume: code-stories --resume ${genId}\n`);
         if (stderr) {
           console.log(`  stderr: ${stderr.slice(0, 1000)}\n`);
         }
@@ -397,8 +564,114 @@ program
   .argument('[query]', 'Question about the codebase to generate a story for')
   .option('-r, --repo <repo>', 'GitHub or GitLab repository (user/repo or full URL)')
   .option('--pr <number>', 'PR/MR number to review', parseInt)
+  .option('--resume [id]', 'Resume an interrupted story generation. Pass a generation ID (or prefix) to resume, or omit to list resumable stories.')
   .option('--verbose', 'Show the agent reasoning process for debugging')
   .action(async (query, options) => {
+
+    // Handle --resume mode
+    if (options.resume !== undefined) {
+      ensureDirectories();
+
+      // --resume with no ID: list incomplete generations
+      if (options.resume === true) {
+        const incomplete = listIncompleteGenerations();
+        if (incomplete.length === 0) {
+          console.log('\n  No incomplete stories found.\n');
+          process.exit(0);
+        }
+
+        console.log('\n  Incomplete stories:\n');
+        for (const gen of incomplete) {
+          const progress = Math.round((gen.stage / STAGES.length) * 100);
+          const prTag = gen.isPR ? ' [PR]' : '';
+          console.log(`  ${gen.id}`);
+          console.log(`    Query: "${gen.query}"${prTag}`);
+          if (gen.repo) console.log(`    Repo: ${gen.repo}`);
+          console.log(`    Progress: ${progress}% — next: ${gen.stageLabel}`);
+          console.log(`    Started: ${gen.createdAt}`);
+          console.log('');
+        }
+        console.log('  To resume: code-stories --resume <id>\n');
+        process.exit(0);
+      }
+
+      // --resume <id>: find and resume
+      const generationDir = findGenerationDir(options.resume);
+      if (!generationDir) {
+        console.error(`Error: no incomplete generation found matching "${options.resume}"`);
+        console.error('Run "code-stories --resume" to list incomplete stories.');
+        process.exit(1);
+      }
+
+      const metaPath = path.join(generationDir, 'metadata.json');
+      if (!fs.existsSync(metaPath)) {
+        console.error(`Error: generation directory found but missing metadata.json.`);
+        console.error(`Cannot resume without metadata. Directory: ${generationDir}`);
+        process.exit(1);
+      }
+
+      const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+      const currentStageNum = getCurrentStage(generationDir);
+
+      if (currentStageNum >= STAGES.length) {
+        // story.json exists — try to finalize
+        const storyPath = path.join(generationDir, 'story.json');
+        if (fs.existsSync(storyPath)) {
+          console.log('\n  Story appears complete! Finalizing...\n');
+          try {
+            const story = JSON.parse(fs.readFileSync(storyPath, 'utf-8'));
+            const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+            if (!story.id || !uuidRegex.test(story.id)) {
+              throw new Error(`Invalid story ID: "${story.id}"`);
+            }
+            const finalPath = path.join(STORIES_DIR, `${story.id}.json`);
+            fs.writeFileSync(finalPath, JSON.stringify(story, null, 2));
+            updateManifest(STORIES_DIR, {
+              id: story.id,
+              title: story.title,
+              commitHash: story.commitHash,
+              createdAt: story.createdAt,
+            });
+            fs.rmSync(generationDir, { recursive: true, force: true });
+            console.log(`  Story saved: ${finalPath}\n`);
+            process.exit(0);
+          } catch (error) {
+            console.error(`  Error finalizing: ${error.message}`);
+            process.exit(1);
+          }
+        }
+      }
+
+      const progress = Math.round((currentStageNum / STAGES.length) * 100);
+      console.log(`\n  Resuming story generation (${progress}% complete)`);
+      console.log(`  Query: "${meta.query}"`);
+      console.log(`  Next: ${STAGES[currentStageNum]?.label || 'Finalizing'}\n`);
+
+      // For PR stories with a remote repo, we need to re-clone
+      let cwd = process.cwd();
+      if (meta.repoId && meta.isPR && meta.prData) {
+        // PR stories need the cloned repo — check if we can work from cwd
+        // For now, use cwd (assumes user is in the right directory or repo was local)
+        console.log('  Note: PR resume works best from the original repo directory.\n');
+      }
+
+      try {
+        await generateStory(meta.query, {
+          cwd,
+          repoId: meta.repoId,
+          prData: meta.prData,
+          verbose: !!options.verbose,
+          resume: { generationDir, meta },
+        });
+      } catch (error) {
+        console.error(`  Resume failed: ${error.message}`);
+        process.exit(1);
+      }
+
+      process.exit(0);
+    }
+
+    // Normal mode
     if (!query && !options.pr) {
       console.error('Error: must provide a query or --pr <number>');
       process.exit(1);
