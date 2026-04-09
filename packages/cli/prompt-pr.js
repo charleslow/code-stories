@@ -168,15 +168,9 @@ Each snippet has a \`type\` field: either \`"code"\` or \`"diff"\`.
 - Think carefully about which type is best for each segment. Not every snippet needs to be a diff.
 - Don't assume the reader knows the codebase well — provide context generously.
 
-## Critical Instruction
-
-Do NOT just focus on the PR diff. The reader may not be familiar with this codebase. Explore
-surrounding context and explain it when necessary for understanding the changes. A good PR review
-story builds context BEFORE showing diffs, so the reader understands what they're looking at.
-
 ## Pipeline
 
-Follow these 6 stages in order. Do all your thinking, exploring, and planning
+Follow these 5 stages in order. Do all your thinking, exploring, and planning
 BEFORE you output the JSON. The JSON must be your FINAL output — a single fenced
 code block and nothing else after it.
 
@@ -213,18 +207,14 @@ ONE clear teaching point.
 
 Guidelines:
 - Start with an overview chapter (no snippets) that orients the reader to the PR's purpose
-- Build context BEFORE showing diffs: show the existing code/architecture first, then the changes
+- Do NOT just focus on the PR diff — the reader may not know this codebase. Build context
+  BEFORE showing diffs: show existing code/architecture first, then the changes
 - Group related changes together even if they span multiple files
 - Include inline review callouts for concerns, suggestions, and questions
 - End with a summary chapter (no snippets) that consolidates findings and overall assessment
 - Chapter labels should be 2-4 words (for the sidebar)
 
-**Checkpoint:** Write your outline to ${generationDir}/narrative_outline.md.
-End the file with the line: STAGE_2_COMPLETE
-
-### Stage 3: Review the Outline
-
-Evaluate your outline against these criteria:
+Before finalizing, verify your outline against this checklist and revise if needed:
 1. Does each chapter have exactly one clear teaching point?
 2. Is context shown BEFORE diffs in each chapter?
 3. Are concerns distributed across relevant chapters (not all lumped at the end)?
@@ -233,23 +223,17 @@ Evaluate your outline against these criteria:
 6. Is the final chapter a prose-only summary with consolidated concerns?
 7. Does the story cover both what changed and why?
 
-Revise the outline if any criteria are not met.
+**Checkpoint:** Write your verified outline to ${generationDir}/narrative_outline.md.
+End the file with the line: STAGE_2_COMPLETE
 
-**Checkpoint:** Write your revised outline to ${generationDir}/narrative_outline_reviewed.md.
-End the file with the line: STAGE_3_COMPLETE
-
-### Stage 4: Identify Snippets
+### Stage 3: Identify Snippets
 
 For each chapter, select the exact code or diff segments to show.
 
 Constraints:
 - Each chapter's total code should be 20-70 lines across all snippets. Absolute max 80 lines.
 - Use a mix of \`type: "code"\` and \`type: "diff"\` snippets as appropriate
-- For diff snippets, include the \`lines\` array with accurate line numbers computed from
-  the diff hunks. Track oldLineNumber and newLineNumber carefully:
-  * Context lines: both old and new line numbers present, increment both
-  * Added lines: oldLineNumber is null, only newLineNumber increments
-  * Removed lines: newLineNumber is null, only oldLineNumber increments
+- For diff snippets, include the \`lines\` array with accurate line numbers (see Snippet Types above)
 - Show complete logical units when possible
 - The \`content\` field must match the actual source code exactly
 - \`startLine\` and \`endLine\` must be accurate
@@ -257,9 +241,9 @@ Constraints:
 - Keep snippet count per chapter to 1-3
 
 **Checkpoint:** Write your snippet selections to ${generationDir}/snippets_mapping.md.
-End the file with the line: STAGE_4_COMPLETE
+End the file with the line: STAGE_3_COMPLETE
 
-### Stage 5: Craft Explanations
+### Stage 4: Craft Explanations
 
 Write the explanation for each chapter in markdown.
 
@@ -276,19 +260,18 @@ Guidelines:
 - Tone: friendly, thorough reviewer — not adversarial, not rubber-stamping
 
 **Checkpoint:** Write your draft explanations to ${generationDir}/explanations_draft.md.
-End the file with the line: STAGE_5_COMPLETE
+End the file with the line: STAGE_4_COMPLETE
 
-### Stage 6: Quality Check
+### Stage 5: Quality Check
 
 Before outputting the JSON, verify each constraint:
 
-1. **Snippet line cap**: No chapter has more than 80 total snippet lines.
+1. **Snippet line cap**: No chapter exceeds 80 total snippet lines.
 2. **Context before diffs**: Each chapter that shows diffs also provides context.
-3. **Diff line validation**: All diff snippets have valid \`lines\` arrays with correct
-   oldLineNumber/newLineNumber tracking.
-4. **Bookend chapters have no snippets**: First (overview) and last (summary) chapters.
+3. **Diff line validation**: All diff snippets have valid \`lines\` arrays.
+4. **Bookend chapters**: Overview (first) and summary (last) have empty snippets arrays.
 5. **Concern distribution**: Review concerns are spread across relevant chapters.
-6. **PR field populated**: The \`pr\` field in the output JSON contains full PR metadata.
+6. **PR field populated**: The \`pr\` field contains full PR metadata.
 7. **Query coverage**: The story addresses the user's query.
 
 ## Output
