@@ -154,12 +154,17 @@ function runCodex({ prompt, cwd, generationDir, checkpoints, timeoutMs, verbose,
   return new Promise((resolve, reject) => {
     const args = [
       'exec',
-      '--full-auto',
+      '--sandbox', 'danger-full-access',
       '-C', cwd,
       '--add-dir', generationDir,
       '-',  // read prompt from stdin
     ];
-    const codex = spawn('codex', args, { cwd });
+    const cleanEnv = { ...process.env };
+    delete cleanEnv.CLAUDECODE;
+    delete cleanEnv.CLAUDE_CODE_ENTRYPOINT;
+    delete cleanEnv.CLAUDE_CODE_SESSION;
+
+    const codex = spawn('codex', args, { cwd, env: cleanEnv });
 
     // Send prompt via stdin
     codex.stdin.on('error', (err) => {

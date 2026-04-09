@@ -54,8 +54,10 @@ Use these fixed values:
 
 ## Instructions
 
-Follow these stages in order. Each stage has checkpoint files you MUST write before
-proceeding to the next stage. If a checkpoint file already exists with the expected
+Follow these stages in strict sequential order. After completing each stage, you MUST
+immediately write its checkpoint file to disk before starting any work on the next stage.
+Do not skip ahead, batch file writes, or begin a later stage until the current stage's
+checkpoint file has been written. If a checkpoint file already exists with the expected
 marker, you may skip that stage.
 
 ---
