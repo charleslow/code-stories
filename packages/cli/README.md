@@ -1,6 +1,6 @@
 # Code Stories CLI
 
-Generate narrative-driven code stories using Claude. A code story is a guided walkthrough of your codebase that answers questions like "How does authentication work?" or "Trace a request from API to database".
+Generate narrative-driven code stories using Codex. A code story is a guided walkthrough of your codebase that answers questions like "How does authentication work?" or "Trace a request from API to database".
 
 ## Installation
 
@@ -23,7 +23,7 @@ code-stories --resume <id>         # resume by generation ID (prefix match suppo
 ```
 
 The CLI will:
-1. Analyze your codebase using Claude
+1. Analyze your codebase using Codex
 2. Create a multi-chapter narrative explaining the code
 3. Save the story as JSON in `./stories/{id}.json`
 
@@ -54,7 +54,7 @@ Or load any story JSON URL directly: `https://charleslow.github.io/code-stories/
 ## Requirements
 
 - Node.js 18+
-- [Codex CLI](https://claude.ai/cli) installed and configured
+- Codex CLI installed and configured
 - Git repository (for commit hash tracking)
 
 ## How It Works

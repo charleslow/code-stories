@@ -1,11 +1,11 @@
 # Prompt Optimization Loop
 
-Iteratively improves the `buildPrompt` function in `index.js` using Claude.
+Iteratively improves the `buildPrompt` function in `index.js` using Codex.
 
 ## Prerequisites
 
 - Node.js installed
-- Codex CLI installed and authenticated (`npm install -g @anthropic-ai/claude-code && codex login`)
+- Codex CLI installed and authenticated
 
 ## Run
 

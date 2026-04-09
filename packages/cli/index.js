@@ -113,7 +113,7 @@ function cloneRepoForPR(repo, prNumber, host, cli, spinner) {
   return { tempDir, repoId };
 }
 
-// Maximum time (ms) the Claude subprocess may run before being killed.
+// Maximum time (ms) the Codex subprocess may run before being killed.
 const GENERATION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
 // Maximum time (ms) allowed without any stage progress before aborting.
@@ -280,7 +280,7 @@ function listIncompleteGenerations() {
 function buildResumePrompt(generationDir, meta) {
   const completedStage = getCurrentStage(generationDir);
 
-  // List completed files by path (Claude reads them on demand via Read tool)
+  // List completed files by path (Codex reads them on demand via Read tool)
   const completedFiles = STAGES.slice(0, completedStage)
     .map(({ file }) => ({ name: file, path: path.join(generationDir, file) }))
     .filter(f => fs.existsSync(f.path))
@@ -360,6 +360,7 @@ async function generateStory(query, options = {}) {
       query,
       commitHash,
       repoId,
+      sourceCwd: cwd,
       isPR: !!prData,
       prData: prData || null,
       createdAt: new Date().toISOString(),
@@ -412,13 +413,18 @@ async function generateStory(query, options = {}) {
     const args = [
       'exec',
       '--full-auto',
+      '-C', cwd,
+      '--add-dir', generationDir,
       '-',  // read prompt from stdin
     ];
+    const cleanEnv = { ...process.env };
+    delete cleanEnv.CLAUDECODE;
+    delete cleanEnv.CLAUDE_CODE_ENTRYPOINT;
+    delete cleanEnv.CLAUDE_CODE_SESSION;
+
     const codex = spawn('codex', args, {
-      cwd: generationDir,
-      env: Object.fromEntries(
-        Object.entries(process.env).filter(([k]) => k !== 'CLAUDECODE')
-      ),
+      cwd,
+      env: cleanEnv,
     });
 
     // Send prompt via stdin
@@ -539,7 +545,7 @@ process.on('SIGTERM', () => cleanupAndExit(143));
 // CLI setup
 program
   .name('code-stories')
-  .description('Generate narrative-driven code stories using Claude')
+  .description('Generate narrative-driven code stories using Codex')
   .version('0.1.0')
   .argument('[query]', 'Question about the codebase to generate a story for')
   .option('-r, --repo <repo>', 'GitHub or GitLab repository (user/repo or full URL)')
@@ -612,10 +618,36 @@ program
 
       // For PR stories with a remote repo, we need to re-clone
       let cwd = process.cwd();
-      if (meta.repoId && meta.isPR && meta.prData) {
-        // PR stories need the cloned repo — check if we can work from cwd
-        // For now, use cwd (assumes user is in the right directory or repo was local)
-        console.log('  Note: PR resume works best from the original repo directory.\n');
+      if (meta.repoId) {
+        const detected = detectPlatform({ repoArg: meta.repoId });
+        const host = detected.host;
+
+        if (meta.isPR && meta.prData) {
+          const resolved = resolveCli(detected.platform);
+          const spinner = ora({ prefixText: '  ' }).start(`Re-cloning ${meta.repoId} for PR resume...`);
+          try {
+            const result = cloneRepoForPR(meta.repoId, meta.prData.metadata.number, host, resolved.cli, spinner);
+            activeCloneDir = result.tempDir;
+            cwd = result.tempDir;
+            spinner.stop();
+          } catch (error) {
+            spinner.fail(error.message);
+            process.exit(1);
+          }
+        } else {
+          const spinner = ora({ prefixText: '  ' }).start(`Re-cloning ${meta.repoId} for resume...`);
+          try {
+            const result = cloneRepo(meta.repoId, host, spinner);
+            activeCloneDir = result.tempDir;
+            cwd = result.tempDir;
+            spinner.stop();
+          } catch (error) {
+            spinner.fail(error.message);
+            process.exit(1);
+          }
+        }
+      } else if (meta.sourceCwd && fs.existsSync(meta.sourceCwd)) {
+        cwd = meta.sourceCwd;
       }
 
       try {

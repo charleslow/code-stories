@@ -1,4 +1,4 @@
-// Build the prompt for Claude
+// Build the prompt for Codex
 export function buildPrompt(query, generationDir, commitHash, generationId, repoId) {
   const jsonSchema = `{
   "id": "string (UUID)",

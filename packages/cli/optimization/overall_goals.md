@@ -1,7 +1,7 @@
 # Overall Goals
 
 These are the high-level goals for the code-stories CLI tool.
-Claude will use these as the north star when evaluating and improving prompt quality.
+Codex will use these as the north star when evaluating and improving prompt quality.
 
 ## Story Quality Goals
 

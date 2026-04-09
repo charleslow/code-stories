@@ -3,13 +3,13 @@
 /**
  * Prompt Optimization Loop for code-stories CLI
  *
- * Runs iterative cycles where Claude:
+ * Runs iterative cycles where Codex:
  * 1. Generates stories using the current prompt (via the CLI tool)
  * 2. Evaluates the output against overall_goals.md
  * 3. Writes reflections for that iteration
  * 4. Proposes and applies prompt improvements
  *
- * Each iteration builds on previous reflections so Claude learns over time.
+ * Each iteration builds on previous reflections so Codex learns over time.
  */
 
 import { spawn, execSync } from 'child_process';
@@ -92,7 +92,7 @@ function runCommand(cmd, args, { input, cwd, timeout = 1_800_000 } = {}) {
   });
 }
 
-async function runClaude(prompt, { timeout = 1_800_000 } = {}) {
+async function runCodex(prompt, { timeout = 1_800_000 } = {}) {
   const result = await runCommand('codex', [
     'exec',
     '--full-auto',
@@ -265,9 +265,9 @@ Rate how close the current output is to the overall goals. 10 = perfect.
 
 Be honest and specific. Vague feedback like "make it better" is not useful.`;
 
-  const reflections = await runClaude(evaluationPrompt);
+  const reflections = await runCodex(evaluationPrompt);
   if (!reflections || reflections.trim().length < 50) {
-    throw new Error(`Iteration ${iteration}: Reflections output is empty or too short (${reflections?.trim().length || 0} chars). Claude may have failed silently.`);
+    throw new Error(`Iteration ${iteration}: Reflections output is empty or too short (${reflections?.trim().length || 0} chars). Codex may have failed silently.`);
   }
   fs.writeFileSync(path.join(iterDir, 'reflections.md'), reflections);
   console.log(`  Reflections saved to iteration-${iteration}/reflections.md`);
@@ -304,9 +304,9 @@ Focus your changes on:
 
 Output the complete function, ready to paste into index.js:`;
 
-  const improvedFunction = await runClaude(improvementPrompt);
+  const improvedFunction = await runCodex(improvementPrompt);
   if (!improvedFunction || improvedFunction.trim().length < 50) {
-    throw new Error(`Iteration ${iteration}: Improved prompt output is empty or too short (${improvedFunction?.trim().length || 0} chars). Claude may have failed silently.`);
+    throw new Error(`Iteration ${iteration}: Improved prompt output is empty or too short (${improvedFunction?.trim().length || 0} chars). Codex may have failed silently.`);
   }
   fs.writeFileSync(path.join(iterDir, 'improved_prompt.js'), improvedFunction);
   console.log(`  Improved prompt saved to iteration-${iteration}/improved_prompt.js`);
@@ -328,7 +328,7 @@ Output the complete function, ready to paste into index.js:`;
 
 Do not change anything outside the buildPrompt function.`;
 
-  await runClaude(applyPrompt, { timeout: 1_800_000 });
+  await runCodex(applyPrompt, { timeout: 1_800_000 });
 
   // Verify the file is still valid
   try {

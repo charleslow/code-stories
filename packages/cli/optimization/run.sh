@@ -34,7 +34,7 @@ if ! command -v codex &> /dev/null; then
   echo "ERROR: Codex CLI not found."
   echo ""
   echo "Please install it first:"
-  echo "  npm install -g @anthropic-ai/claude-code"
+  echo "  Install the Codex CLI and ensure the \`codex\` command is on your PATH."
   echo ""
   echo "Then authenticate:"
   echo "  codex login"
