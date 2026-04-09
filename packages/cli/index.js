@@ -155,9 +155,9 @@ function getCompletedStageGroupIndex(generationDir, stages) {
     const allComplete = stages[i].checkpoints.every(cp => {
       const filePath = path.join(generationDir, cp.file);
       if (!fs.existsSync(filePath)) return false;
-      if (cp.marker) {
+      if (cp.checkpoint) {
         const content = fs.readFileSync(filePath, 'utf-8');
-        return content.includes(cp.marker);
+        return content.includes(cp.checkpoint);
       }
       return true;
     });
@@ -211,9 +211,9 @@ function runCodexStage({ prompt, cwd, generationDir, checkpoints, timeoutMs, ver
       for (const cp of checkpoints) {
         const filePath = path.join(generationDir, cp.file);
         if (!fs.existsSync(filePath)) break;
-        if (cp.marker) {
+        if (cp.checkpoint) {
           const content = fs.readFileSync(filePath, 'utf-8');
-          if (!content.includes(cp.marker)) break;
+          if (!content.includes(cp.checkpoint)) break;
         }
         completed++;
       }
@@ -244,9 +244,9 @@ function runCodexStage({ prompt, cwd, generationDir, checkpoints, timeoutMs, ver
       const allComplete = checkpoints.every(cp => {
         const filePath = path.join(generationDir, cp.file);
         if (!fs.existsSync(filePath)) return false;
-        if (cp.marker) {
+        if (cp.checkpoint) {
           const content = fs.readFileSync(filePath, 'utf-8');
-          return content.includes(cp.marker);
+          return content.includes(cp.checkpoint);
         }
         return true;
       });

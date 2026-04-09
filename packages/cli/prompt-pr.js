@@ -165,9 +165,9 @@ ${prContext}`;
     {
       label: 'Analyzing diff & codebase',
       checkpoints: [
-        { file: 'exploration_scan.md', marker: 'EXPLORATION_SCANNED' },
-        { file: 'exploration_read.md', marker: 'EXPLORATION_READ' },
-        { file: 'exploration_notes.md', marker: 'STAGE_1_COMPLETE' },
+        { file: 'exploration_scan.md', checkpoint: 'EXPLORATION_SCANNED' },
+        { file: 'exploration_read.md', checkpoint: 'EXPLORATION_READ' },
+        { file: 'exploration_notes.md', checkpoint: 'STAGE_1_COMPLETE' },
       ],
       prompt: `${preamble}
 
@@ -206,7 +206,7 @@ End the file with the line: STAGE_1_COMPLETE`,
     {
       label: 'Planning outline',
       checkpoints: [
-        { file: 'narrative_outline.md', marker: 'STAGE_2_COMPLETE' },
+        { file: 'narrative_outline.md', checkpoint: 'STAGE_2_COMPLETE' },
       ],
       prompt: `${preamble}
 
@@ -251,7 +251,7 @@ End the file with the line: STAGE_2_COMPLETE`,
     {
       label: 'Identifying snippets',
       checkpoints: [
-        { file: 'snippets_mapping.md', marker: 'STAGE_3_COMPLETE' },
+        { file: 'snippets_mapping.md', checkpoint: 'STAGE_3_COMPLETE' },
       ],
       prompt: `${preamble}
 
@@ -292,7 +292,7 @@ End the file with the line: STAGE_3_COMPLETE`,
     {
       label: 'Crafting explanations',
       checkpoints: [
-        { file: 'explanations_draft.md', marker: 'STAGE_4_COMPLETE' },
+        { file: 'explanations_draft.md', checkpoint: 'STAGE_4_COMPLETE' },
       ],
       prompt: `${preamble}
 
@@ -330,7 +330,7 @@ End the file with the line: STAGE_4_COMPLETE`,
     {
       label: 'Finalizing story',
       checkpoints: [
-        { file: 'story.json', marker: null },
+        { file: 'story.json', checkpoint: null },
       ],
       prompt: `${preamble}
 
