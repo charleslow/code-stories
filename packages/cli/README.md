@@ -54,7 +54,7 @@ Or load any story JSON URL directly: `https://charleslow.github.io/code-stories/
 ## Requirements
 
 - Node.js 18+
-- [Claude CLI](https://claude.ai/cli) installed and configured
+- [Codex CLI](https://claude.ai/cli) installed and configured
 - Git repository (for commit hash tracking)
 
 ## How It Works

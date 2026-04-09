@@ -93,10 +93,10 @@ function runCommand(cmd, args, { input, cwd, timeout = 1_800_000 } = {}) {
 }
 
 async function runClaude(prompt, { timeout = 1_800_000 } = {}) {
-  const result = await runCommand('claude', [
-    '-p',
-    '--dangerously-skip-permissions',
-    '--output-format', 'text',
+  const result = await runCommand('codex', [
+    'exec',
+    '--full-auto',
+    '-',  // read prompt from stdin
   ], {
     input: prompt,
     timeout,
@@ -104,7 +104,7 @@ async function runClaude(prompt, { timeout = 1_800_000 } = {}) {
 
   if (result.code !== 0) {
     const stderrSnippet = result.stderr ? result.stderr.slice(0, 500) : 'none';
-    throw new Error(`Claude exited with code ${result.code}. stderr: ${stderrSnippet}`);
+    throw new Error(`Codex exited with code ${result.code}. stderr: ${stderrSnippet}`);
   }
   return result.stdout;
 }
