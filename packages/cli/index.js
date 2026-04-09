@@ -125,9 +125,8 @@ const STAGES = [
   { file: 'exploration_read.md', checkpoint: 'EXPLORATION_READ', label: 'Reading key files' },
   { file: 'exploration_notes.md', checkpoint: 'STAGE_1_COMPLETE', label: 'Documenting architecture' },
   { file: 'narrative_outline.md', checkpoint: 'STAGE_2_COMPLETE', label: 'Planning outline' },
-  { file: 'narrative_outline_reviewed.md', checkpoint: 'STAGE_3_COMPLETE', label: 'Reviewing outline' },
-  { file: 'snippets_mapping.md', checkpoint: 'STAGE_4_COMPLETE', label: 'Identifying snippets' },
-  { file: 'explanations_draft.md', checkpoint: 'STAGE_5_COMPLETE', label: 'Crafting explanations' },
+  { file: 'snippets_mapping.md', checkpoint: 'STAGE_3_COMPLETE', label: 'Identifying snippets' },
+  { file: 'explanations_draft.md', checkpoint: 'STAGE_4_COMPLETE', label: 'Crafting explanations' },
   { file: 'story.json', checkpoint: null, label: 'Finalizing story' },
 ];
 
@@ -281,26 +280,22 @@ function listIncompleteGenerations() {
 function buildResumePrompt(generationDir, meta) {
   const completedStage = getCurrentStage(generationDir);
 
-  // Gather completed + any partial intermediate file contents
+  // List completed files by path (Claude reads them on demand via Read tool)
   const completedFiles = STAGES.slice(0, completedStage)
     .map(({ file }) => ({ name: file, path: path.join(generationDir, file) }))
     .filter(f => fs.existsSync(f.path))
-    .map(f => ({ name: f.name, content: fs.readFileSync(f.path, 'utf-8') }));
+    .map(f => `- ${f.path} (COMPLETED)`);
 
   if (completedStage < STAGES.length) {
-    const partialPath = path.join(generationDir, STAGES[completedStage].file);
+    const partialFile = STAGES[completedStage].file;
+    const partialPath = path.join(generationDir, partialFile);
     if (fs.existsSync(partialPath)) {
       const content = fs.readFileSync(partialPath, 'utf-8');
       if (content.trim()) {
-        completedFiles.push({ name: STAGES[completedStage].file, content, partial: true });
+        completedFiles.push(`- ${partialPath} (PARTIAL — not yet completed)`);
       }
     }
   }
-
-  const filesSection = completedFiles.map(f => {
-    const tag = f.partial ? ' (PARTIAL — not yet completed)' : ' (COMPLETED)';
-    return `### ${f.name}${tag}\n\`\`\`\n${f.content}\n\`\`\``;
-  }).join('\n\n');
 
   const remainingStages = STAGES.slice(completedStage)
     .map((s, i) => `Stage ${completedStage + i + 1}: ${s.label}`);
@@ -316,20 +311,21 @@ function buildResumePrompt(generationDir, meta) {
 ## IMPORTANT: This is a RESUME of a previously interrupted generation
 
 The previous generation was interrupted at stage ${completedStage + 1} of ${STAGES.length}.
-The following intermediate files have already been produced. Do NOT redo completed work.
-Instead, read the completed files below, pick up from where things left off, and continue
-through the remaining stages to completion.
+Do NOT redo completed work. Read the completed files, pick up where things left off, and
+continue through the remaining stages.
 
-### Completed progress (${completedStage} of ${STAGES.length - 1} stages done)
+### Completed files (${completedStage} of ${STAGES.length - 1} stages done)
 
-${filesSection}
+${completedFiles.join('\n')}
+
+Use the Read tool to review these files before continuing.
 
 ### Remaining work
 ${remainingStages.map(s => `- ${s}`).join('\n')}
 
 **Resume instructions:**
-1. Read and internalize ALL the completed intermediate files above — they represent
-   significant work that should not be discarded or redone.
+1. Read ALL the completed intermediate files listed above — they represent significant
+   work that should not be discarded or redone.
 2. If there is a partial file, complete it first (keep what's good, fix or extend as needed).
 3. Continue with the remaining stages in order.
 4. The final output must still be a valid story.json written to ${generationDir}/story.json.

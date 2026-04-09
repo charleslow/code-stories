@@ -42,7 +42,7 @@ Use these fixed values:
 
 ## Pipeline
 
-Follow these 6 stages in order. Do all your thinking, exploring, and planning
+Follow these 5 stages in order. Do all your thinking, exploring, and planning
 BEFORE you output the JSON. The JSON must be your FINAL output — a single fenced
 code block and nothing else after it.
 
@@ -83,11 +83,7 @@ single insight the reader takes away.
 Guidelines:
 - Start with an overview chapter (no code snippets) that orients the reader
 - Build from foundations to synthesis: show building blocks before compositions
-- End with a summary chapter (no code snippets) that provides closure to the story.
-  This final chapter should recap the key insights covered, highlight important design
-  decisions or patterns the reader encountered, and leave the reader with a clear
-  mental model of how the pieces fit together. Keep it concise and avoid restating
-  every detail — focus on the "so what" and any overarching themes
+- End with a summary chapter (no code snippets) that provides closure to the story
 - Chapter labels should be 2-4 words (for the sidebar)
 - If the story naturally divides into distinct phases or subsystems (e.g., a basic
   mechanism and then an advanced variant), introduce the transition between phases
@@ -101,12 +97,7 @@ Guidelines:
   defined. If the query uses specialized terminology, the overview chapter should
   briefly explain these terms.
 
-**Checkpoint:** Write your outline to ${generationDir}/narrative_outline.md.
-End the file with the line: STAGE_2_COMPLETE
-
-### Stage 3: Review the Outline
-
-Before proceeding, evaluate your outline against these criteria:
+Before finalizing, verify your outline against this checklist and revise if needed:
 1. Does each chapter have exactly one clear teaching point?
 2. Are technical terms introduced before they're used?
 3. Is the progression logical — could a newcomer follow along?
@@ -122,12 +113,10 @@ Before proceeding, evaluate your outline against these criteria:
     "numpy, pytorch, tensorflow and jax", verify that all four are covered. If any
     are missing, add chapters or expand existing ones.
 
-Revise the outline if any criteria are not met.
+**Checkpoint:** Write your verified outline to ${generationDir}/narrative_outline.md.
+End the file with the line: STAGE_2_COMPLETE
 
-**Checkpoint:** Write your revised outline to ${generationDir}/narrative_outline_reviewed.md.
-End the file with the line: STAGE_3_COMPLETE
-
-### Stage 4: Identify Snippets
+### Stage 3: Identify Snippets
 
 For each chapter, select the exact code to show.
 
@@ -160,9 +149,9 @@ Constraints:
   well for context.
 
 **Checkpoint:** Write your snippet selections to ${generationDir}/snippets_mapping.md.
-End the file with the line: STAGE_4_COMPLETE
+End the file with the line: STAGE_3_COMPLETE
 
-### Stage 5: Craft Explanations
+### Stage 4: Craft Explanations
 
 Write the explanation for each chapter in markdown.
 
@@ -205,29 +194,19 @@ Guidelines:
   doesn't need to look things up elsewhere
 
 **Checkpoint:** Write your draft explanations to ${generationDir}/explanations_draft.md.
-End the file with the line: STAGE_5_COMPLETE
+End the file with the line: STAGE_4_COMPLETE
 
-### Stage 6: Quality Check
+### Stage 5: Quality Check
 
-Before outputting the JSON, verify each of these constraints. If any check fails,
-revise the affected chapters before outputting.
+Before outputting the JSON, verify each constraint. If any check fails, revise before outputting.
 
-1. **Snippet line cap**: No chapter has more than 80 total snippet lines.
-2. **Snippet cleanliness**: No snippet has more than ~10% debug/logging lines. Check
-   especially for trailing debug blocks after the core logic ends — truncate the
-   snippet range to exclude them.
-3. **Snippet Coherence**: All snippets are coherent as far as possible, or provide
-   sufficient context to understand their place in the codebase.
-4. **Bookend chapters have no snippets**: The first chapter (overview) and last chapter
-   (summary) must both have empty snippets arrays.
-5. **Transition variety**: No transition opener pattern (e.g., "This is...") appears
-   in more than 2 non-overview chapters. Scan your chapter openings and revise any
-   that repeat.
-6. **Explanation length ratio**: The ratio between your shortest and longest non-overview
-   explanation is at least 2:1. If all explanations cluster in a narrow band (e.g.,
-   140-200 words), shorten the simplest chapters and/or expand the most complex ones.
-7. **Query coverage**: All technologies, concepts, or components explicitly mentioned
-   in the query are covered by at least one chapter.
+1. **Snippet line cap**: No chapter exceeds 80 total snippet lines.
+2. **Snippet cleanliness**: No snippet exceeds ~10% debug/logging lines.
+3. **Snippet coherence**: All snippets provide sufficient context.
+4. **Bookend chapters**: Overview (first) and summary (last) have empty snippets arrays.
+5. **Transition variety**: No opener pattern appears in more than 2 non-overview chapters.
+6. **Explanation length ratio**: Shortest-to-longest non-overview ratio is at least 1:2.
+7. **Query coverage**: All technologies/concepts mentioned in the query are covered.
 
 ## Output
 
