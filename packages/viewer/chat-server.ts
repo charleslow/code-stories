@@ -29,8 +29,9 @@ export function runClaude(prompt: string): Promise<string> {
     delete cleanEnv.CLAUDE_CODE_ENTRYPOINT
     delete cleanEnv.CLAUDE_CODE_SESSION
 
-    const proc = spawn('codex', ['-p', '--allowedTools', 'Read', '--add-dir', storiesDir], {
+    const proc = spawn('codex', ['exec', '--full-auto', '-'], {
       stdio: ['pipe', 'pipe', 'pipe'],
+      cwd: storiesDir,
       env: cleanEnv,
     })
     console.log('[chat] codex process pid:', proc.pid)

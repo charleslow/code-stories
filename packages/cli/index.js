@@ -409,40 +409,36 @@ async function generateStory(query, options = {}) {
 
   return new Promise((resolve, reject) => {
     // Spawn Codex CLI
-    const allowedTools = 'Read,Grep,Glob,Write';
     const args = [
-      '-p',
-      '--allowedTools', allowedTools,
-      '--add-dir', generationDir,
+      'exec',
+      '--full-auto',
+      '-',  // read prompt from stdin
     ];
-    if (verbose) {
-      args.push('--verbose');
-    }
-    const claude = spawn('codex', args, {
-      cwd,
+    const codex = spawn('codex', args, {
+      cwd: generationDir,
       env: Object.fromEntries(
         Object.entries(process.env).filter(([k]) => k !== 'CLAUDECODE')
       ),
     });
 
     // Send prompt via stdin
-    claude.stdin.on('error', (err) => {
-      // Handle EPIPE gracefully - Claude process may have exited early
+    codex.stdin.on('error', (err) => {
+      // Handle EPIPE gracefully - Codex process may have exited early
       if (err.code !== 'EPIPE') throw err;
     });
     let stdout = '';
-    claude.stdout.on('data', (data) => {
+    codex.stdout.on('data', (data) => {
       const chunk = data.toString();
       stdout += chunk;
       if (verbose) {
         process.stdout.write(chunk);
       }
     });
-    claude.stdin.write(prompt);
-    claude.stdin.end();
+    codex.stdin.write(prompt);
+    codex.stdin.end();
 
     let stderr = '';
-    claude.stderr.on('data', (data) => {
+    codex.stderr.on('data', (data) => {
       const chunk = data.toString();
       stderr += chunk;
       if (verbose) {
@@ -471,7 +467,7 @@ async function generateStory(query, options = {}) {
     // Overall generation timeout
     const generationTimer = setTimeout(() => {
       clearTimers();
-      claude.kill('SIGTERM');
+      codex.kill('SIGTERM');
       fail(`Generation timed out after ${GENERATION_TIMEOUT_MS / 60_000} minutes. Resume with: code-stories --resume ${genId}`);
       reject(new Error('Generation timed out'));
     }, GENERATION_TIMEOUT_MS);
@@ -481,20 +477,20 @@ async function generateStory(query, options = {}) {
       const elapsed = Date.now() - lastProgressAt;
       if (elapsed > STALL_TIMEOUT_MS) {
         clearTimers();
-        claude.kill('SIGTERM');
+        codex.kill('SIGTERM');
         const stuckLabel = STAGES[currentStage]?.label || 'unknown stage';
         fail(`Generation stalled at "${stuckLabel}" for ${Math.round(elapsed / 60_000)} minutes. Resume with: code-stories --resume ${genId}`);
         reject(new Error('Generation stalled'));
       }
     }, 10_000);
 
-    claude.on('error', (error) => {
+    codex.on('error', (error) => {
       clearTimers();
       fail(`Failed to spawn Codex CLI: ${error.message}`);
       reject(error);
     });
 
-    claude.on('close', (code) => {
+    codex.on('close', (code) => {
       clearTimers();
 
       // Check if story.json was created

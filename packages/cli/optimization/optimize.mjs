@@ -94,9 +94,9 @@ function runCommand(cmd, args, { input, cwd, timeout = 1_800_000 } = {}) {
 
 async function runClaude(prompt, { timeout = 1_800_000 } = {}) {
   const result = await runCommand('codex', [
-    '-p',
-    '--dangerously-skip-permissions',
-    '--output-format', 'text',
+    'exec',
+    '--full-auto',
+    '-',  // read prompt from stdin
   ], {
     input: prompt,
     timeout,
