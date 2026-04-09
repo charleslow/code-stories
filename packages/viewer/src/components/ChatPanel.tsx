@@ -108,7 +108,7 @@ export default function ChatPanel({
         <div className="chat-messages">
           {messages.map((msg, i) => (
             <div key={i} className={`chat-message chat-message-${msg.role}`}>
-              <div className="chat-message-role">{msg.role === 'user' ? 'You' : 'Claude'}</div>
+              <div className="chat-message-role">{msg.role === 'user' ? 'You' : 'Codex'}</div>
               <div className="chat-message-content">
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>
                   {msg.content}
@@ -118,7 +118,7 @@ export default function ChatPanel({
           ))}
           {loading && (
             <div className="chat-message chat-message-assistant">
-              <div className="chat-message-role">Claude</div>
+              <div className="chat-message-role">Codex</div>
               <div className="chat-message-content chat-thinking">Thinking...</div>
             </div>
           )}

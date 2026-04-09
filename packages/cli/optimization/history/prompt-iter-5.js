@@ -94,7 +94,7 @@ function getCurrentStage(generationDir) {
   return stage;
 }
 
-// Build the prompt for Claude
+// Build the prompt for Codex
 function buildPrompt(query, generationDir, commitHash, generationId, repoId) {
   const jsonSchema = `{
   "id": "string (UUID)",
@@ -327,9 +327,9 @@ async function generateStory(query, options = {}) {
   }, 1000);
 
   return new Promise((resolve, reject) => {
-    // Spawn Claude CLI
+    // Spawn Codex CLI
     const allowedTools = 'Read,Grep,Glob,Write';
-    const claude = spawn('claude', [
+    const codex = spawn('codex', [
       '-p',
       '--dangerously-skip-permissions',
       '--allowedTools', allowedTools,
@@ -340,21 +340,21 @@ async function generateStory(query, options = {}) {
     });
 
     // Send prompt via stdin
-    claude.stdin.write(prompt);
-    claude.stdin.end();
+    codex.stdin.write(prompt);
+    codex.stdin.end();
 
     let stderr = '';
-    claude.stderr.on('data', (data) => {
+    codex.stderr.on('data', (data) => {
       stderr += data.toString();
     });
 
-    claude.on('error', (error) => {
+    codex.on('error', (error) => {
       clearInterval(progressInterval);
-      spinner.fail(`Failed to spawn Claude CLI: ${error.message}`);
+      spinner.fail(`Failed to spawn Codex CLI: ${error.message}`);
       reject(error);
     });
 
-    claude.on('close', (code) => {
+    codex.on('close', (code) => {
       clearInterval(progressInterval);
 
       // Check if story.json was created
@@ -421,7 +421,7 @@ process.on('SIGTERM', () => cleanupAndExit(143));
 // CLI setup
 program
   .name('code-stories')
-  .description('Generate narrative-driven code stories using Claude')
+  .description('Generate narrative-driven code stories using Codex')
   .version('0.1.0')
   .argument('<query>', 'Question about the codebase to generate a story for')
   .option('-r, --repo <repo>', 'GitHub repository (user/repo or full URL)')

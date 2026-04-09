@@ -1,7 +1,7 @@
 {
   "name": "code-stories",
   "version": "0.1.5",
-  "description": "Generate narrative-driven code stories using Claude",
+  "description": "Generate narrative-driven code stories using Codex",
   "type": "module",
   "bin": {
     "code-stories": "index.js"
@@ -19,7 +19,7 @@
     "code",
     "stories",
     "documentation",
-    "claude",
+    "codex",
     "ai"
   ],
   "author": "",

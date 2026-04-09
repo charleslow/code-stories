@@ -15,7 +15,7 @@ PR review mode clones the repo, checks out the PR branch, fetches the diff and c
 ## Requirements
 
 - Node.js 18+
-- [Codex CLI](https://claude.ai/cli) installed and configured
+- Codex CLI installed and configured
 - A git repository to analyze
 
 For PR/MR review mode only:
@@ -105,7 +105,7 @@ You can also run your own viewer locally or deploy your own by reading further.
 ## Development
 
 This is a monorepo with two packages:
-- `packages/cli/` — CLI for generating stories (uses Claude CLI)
+- `packages/cli/` — CLI for generating stories (uses Codex CLI)
 - `packages/viewer/` — Static React viewer for reading stories
 
 ```bash
@@ -147,7 +147,7 @@ cd /path/to/any/repo
 code-stories "Your question here"
 ```
 
-Requires [Codex CLI](https://claude.ai/cli) to be installed and configured.
+Requires Codex CLI to be installed and configured.
 
 ### Publishing to npm
 

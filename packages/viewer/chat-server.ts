@@ -12,7 +12,13 @@ function jsonResponse(res: ServerResponse, data: unknown, status = 200) {
   res.end(JSON.stringify(data))
 }
 
-export function runClaude(prompt: string): Promise<string> {
+const LEGACY_CLAUDE_CODE_ENV_VARS = [
+  'CLAUDECODE',
+  'CLAUDE_CODE_ENTRYPOINT',
+  'CLAUDE_CODE_SESSION',
+] as const
+
+export function runCodex(prompt: string): Promise<string> {
   return new Promise((resolve, reject) => {
     let settled = false
     const done = (err: Error | null, result?: string) => {
@@ -23,11 +29,11 @@ export function runClaude(prompt: string): Promise<string> {
       else resolve(result!)
     }
 
-    // Strip CLAUDECODE env vars so nested codex sessions don't fail
+    // Strip legacy Claude Code session vars so nested Codex sessions don't inherit stale state.
     const cleanEnv = { ...process.env }
-    delete cleanEnv.CLAUDECODE
-    delete cleanEnv.CLAUDE_CODE_ENTRYPOINT
-    delete cleanEnv.CLAUDE_CODE_SESSION
+    for (const envVar of LEGACY_CLAUDE_CODE_ENV_VARS) {
+      delete cleanEnv[envVar]
+    }
 
     const proc = spawn('codex', ['exec', '--full-auto', '-'], {
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -243,7 +249,7 @@ export async function handleChatRequest(req: Connect.IncomingMessage, res: Serve
       })
 
       // Run Codex OUTSIDE the lock — this is the slow part (up to 120s)
-      const aiReply = await runClaude(prompt)
+      const aiReply = await runCodex(prompt)
 
       // Only lock for the atomic read-modify-write of the chat file
       await withFileLock(chatPath, async () => {

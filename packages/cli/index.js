@@ -113,7 +113,7 @@ function cloneRepoForPR(repo, prNumber, host, cli, spinner) {
   return { tempDir, repoId };
 }
 
-// Maximum time (ms) the Claude subprocess may run before being killed.
+// Maximum time (ms) the Codex subprocess may run before being killed.
 const GENERATION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
 // Maximum time (ms) allowed without any stage progress before aborting.
@@ -280,7 +280,7 @@ function listIncompleteGenerations() {
 function buildResumePrompt(generationDir, meta) {
   const completedStage = getCurrentStage(generationDir);
 
-  // List completed files by path (Claude reads them on demand via Read tool)
+  // List completed files by path (Codex reads them on demand via Read tool)
   const completedFiles = STAGES.slice(0, completedStage)
     .map(({ file }) => ({ name: file, path: path.join(generationDir, file) }))
     .filter(f => fs.existsSync(f.path))
@@ -414,11 +414,14 @@ async function generateStory(query, options = {}) {
       '--full-auto',
       '-',  // read prompt from stdin
     ];
+    const cleanEnv = { ...process.env };
+    delete cleanEnv.CLAUDECODE;
+    delete cleanEnv.CLAUDE_CODE_ENTRYPOINT;
+    delete cleanEnv.CLAUDE_CODE_SESSION;
+
     const codex = spawn('codex', args, {
       cwd: generationDir,
-      env: Object.fromEntries(
-        Object.entries(process.env).filter(([k]) => k !== 'CLAUDECODE')
-      ),
+      env: cleanEnv,
     });
 
     // Send prompt via stdin
@@ -539,7 +542,7 @@ process.on('SIGTERM', () => cleanupAndExit(143));
 // CLI setup
 program
   .name('code-stories')
-  .description('Generate narrative-driven code stories using Claude')
+  .description('Generate narrative-driven code stories using Codex')
   .version('0.1.0')
   .argument('[query]', 'Question about the codebase to generate a story for')
   .option('-r, --repo <repo>', 'GitHub or GitLab repository (user/repo or full URL)')
