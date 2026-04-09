@@ -453,10 +453,60 @@ async function generateStory(query, options = {}) {
     const stage = stages[i];
     const percent = Math.round((completedCheckpoints / totalCheckpoints) * 100);
 
+<<<<<<< Updated upstream
     if (spinner) {
       spinner.text = `${stage.label} (${percent}%)`;
     } else if (verbose) {
       console.log(`  [${percent}%] ${stage.label}`);
+=======
+  return new Promise((resolve, reject) => {
+    // Spawn Codex CLI
+    const args = [
+      'exec',
+      '--sandbox', 'danger-full-access',
+      '-C', cwd,
+      '--add-dir', generationDir,
+      '-',  // read prompt from stdin
+    ];
+    const cleanEnv = { ...process.env };
+    delete cleanEnv.CLAUDECODE;
+    delete cleanEnv.CLAUDE_CODE_ENTRYPOINT;
+    delete cleanEnv.CLAUDE_CODE_SESSION;
+
+    const codex = spawn('codex', args, {
+      cwd,
+      env: cleanEnv,
+    });
+
+    // Send prompt via stdin
+    codex.stdin.on('error', (err) => {
+      // Handle EPIPE gracefully - Codex process may have exited early
+      if (err.code !== 'EPIPE') throw err;
+    });
+    let stdout = '';
+    codex.stdout.on('data', (data) => {
+      const chunk = data.toString();
+      stdout += chunk;
+      if (verbose) {
+        process.stdout.write(chunk);
+      }
+    });
+    codex.stdin.write(prompt);
+    codex.stdin.end();
+
+    let stderr = '';
+    codex.stderr.on('data', (data) => {
+      const chunk = data.toString();
+      stderr += chunk;
+      if (verbose) {
+        process.stderr.write(chunk);
+      }
+    });
+
+    function fail(message) {
+      if (spinner) spinner.fail(message);
+      else console.error(`  Error: ${message}`);
+>>>>>>> Stashed changes
     }
 
     try {
