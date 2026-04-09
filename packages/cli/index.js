@@ -7,8 +7,8 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { v4 as uuidv4 } from 'uuid';
-import { buildStagePrompts } from './prompt.js';
-import { buildPRStagePrompts } from './prompt-pr.js';
+import { buildPrompt } from './prompt.js';
+import { buildPRPrompt } from './prompt-pr.js';
 import { fetchPRData } from './pr.js';
 import { detectPlatform, resolveCli, parseRepoId, getCloneUrl, checkoutMR } from './hosting.js';
 
@@ -113,8 +113,8 @@ function cloneRepoForPR(repo, prNumber, host, cli, spinner) {
   return { tempDir, repoId };
 }
 
-// Maximum time (ms) a single stage's Codex subprocess may run before being killed.
-const STAGE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes per stage
+// Maximum time (ms) the Codex subprocess may run before being killed.
+const TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
 // Flat stage definitions for progress tracking (used by getCurrentStage and listIncompleteGenerations)
 const STAGES = [
@@ -148,36 +148,23 @@ function getCurrentStage(generationDir) {
   return stage;
 }
 
-// Determine which stage group (prompt invocation) to start from based on completed checkpoints.
-// Returns the index of the first incomplete stage (0-based), or stages.length if all complete.
-function getCompletedStageGroupIndex(generationDir, stages) {
-  for (let i = 0; i < stages.length; i++) {
-    const allComplete = stages[i].checkpoints.every(cp => {
-      const filePath = path.join(generationDir, cp.file);
-      if (!fs.existsSync(filePath)) return false;
-      if (cp.checkpoint) {
-        const content = fs.readFileSync(filePath, 'utf-8');
-        return content.includes(cp.checkpoint);
-      }
-      return true;
-    });
-    if (!allComplete) return i;
-  }
-  return stages.length;
-}
-
-// Run a single stage by spawning a Codex subprocess.
-// Polls for checkpoint files and calls onCheckpoint when sub-stage progress is detected.
-function runCodexStage({ prompt, cwd, generationDir, checkpoints, timeoutMs, verbose, onCheckpoint }) {
+// Run the Codex subprocess with the given prompt.
+// Polls for checkpoint files and calls onCheckpoint when progress is detected.
+function runCodex({ prompt, cwd, generationDir, checkpoints, timeoutMs, verbose, onCheckpoint }) {
   return new Promise((resolve, reject) => {
     const args = [
       'exec',
-      '--full-auto',
+      '--sandbox', 'danger-full-access',
       '-C', cwd,
       '--add-dir', generationDir,
       '-',  // read prompt from stdin
     ];
-    const codex = spawn('codex', args, { cwd });
+    const cleanEnv = { ...process.env };
+    delete cleanEnv.CLAUDECODE;
+    delete cleanEnv.CLAUDE_CODE_ENTRYPOINT;
+    delete cleanEnv.CLAUDE_CODE_SESSION;
+
+    const codex = spawn('codex', args, { cwd, env: cleanEnv });
 
     // Send prompt via stdin
     codex.stdin.on('error', (err) => {
@@ -383,7 +370,7 @@ function listIncompleteGenerations() {
   return results.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
-// Generate a story by running each pipeline stage as a separate Codex invocation
+// Generate a story by running the full pipeline as a single Codex invocation
 async function generateStory(query, options = {}) {
   const { cwd = process.cwd(), repoId = null, prData = null, verbose = false, resume = null } = options;
 
@@ -418,13 +405,10 @@ async function generateStory(query, options = {}) {
     fs.writeFileSync(path.join(generationDir, 'metadata.json'), JSON.stringify(meta, null, 2));
   }
 
-  // Build per-stage prompts
-  const stages = prData
-    ? buildPRStagePrompts(query, generationDir, commitHash, generationId, repoId, prData)
-    : buildStagePrompts(query, generationDir, commitHash, generationId, repoId);
-
-  // Determine which stage to start from based on existing checkpoint files
-  const startStage = getCompletedStageGroupIndex(generationDir, stages);
+  // Build single prompt with all stages
+  const { prompt, checkpoints } = prData
+    ? buildPRPrompt(query, generationDir, commitHash, generationId, repoId, prData)
+    : buildPrompt(query, generationDir, commitHash, generationId, repoId);
 
   if (!resume) {
     console.log('\n  Code Stories Generator\n');
@@ -436,102 +420,48 @@ async function generateStory(query, options = {}) {
     console.log('');
   }
 
-  // Calculate total checkpoints across all stages for progress percentage
-  const totalCheckpoints = stages.reduce((sum, s) => sum + s.checkpoints.length, 0);
-  let completedCheckpoints = stages.slice(0, startStage).reduce((sum, s) => sum + s.checkpoints.length, 0);
+  // Count already-completed checkpoints (for resume progress offset)
+  let completedCheckpoints = 0;
+  for (const cp of checkpoints) {
+    const filePath = path.join(generationDir, cp.file);
+    if (!fs.existsSync(filePath)) break;
+    if (cp.checkpoint) {
+      const content = fs.readFileSync(filePath, 'utf-8');
+      if (!content.includes(cp.checkpoint)) break;
+    }
+    completedCheckpoints++;
+  }
 
-  const startPercent = Math.round((completedCheckpoints / totalCheckpoints) * 100);
-  const initialLabel = startStage < stages.length ? stages[startStage].label : 'Finalizing';
+  const startPercent = Math.round((completedCheckpoints / checkpoints.length) * 100);
+  const initialLabel = completedCheckpoints < STAGES.length ? STAGES[completedCheckpoints].label : 'Finalizing';
   const spinner = verbose
     ? null
     : ora({ text: `${initialLabel} (${startPercent}%)`, prefixText: '  ' }).start();
 
   const genId = path.basename(generationDir);
 
-  // Run each stage as a separate Codex invocation
-  for (let i = startStage; i < stages.length; i++) {
-    const stage = stages[i];
-    const percent = Math.round((completedCheckpoints / totalCheckpoints) * 100);
-
-<<<<<<< Updated upstream
-    if (spinner) {
-      spinner.text = `${stage.label} (${percent}%)`;
-    } else if (verbose) {
-      console.log(`  [${percent}%] ${stage.label}`);
-=======
-  return new Promise((resolve, reject) => {
-    // Spawn Codex CLI
-    const args = [
-      'exec',
-      '--sandbox', 'danger-full-access',
-      '-C', cwd,
-      '--add-dir', generationDir,
-      '-',  // read prompt from stdin
-    ];
-    const cleanEnv = { ...process.env };
-    delete cleanEnv.CLAUDECODE;
-    delete cleanEnv.CLAUDE_CODE_ENTRYPOINT;
-    delete cleanEnv.CLAUDE_CODE_SESSION;
-
-    const codex = spawn('codex', args, {
+  // Run the full pipeline as a single Codex invocation
+  try {
+    await runCodex({
+      prompt,
       cwd,
-      env: cleanEnv,
+      generationDir,
+      checkpoints,
+      timeoutMs: TIMEOUT_MS,
+      verbose,
+      onCheckpoint: (checkpointIdx) => {
+        const pct = Math.round(((checkpointIdx + 1) / checkpoints.length) * 100);
+        const nextIdx = checkpointIdx + 1;
+        const label = nextIdx < STAGES.length ? STAGES[nextIdx].label : 'Finalizing';
+        if (spinner) spinner.text = `${label} (${pct}%)`;
+      },
     });
-
-    // Send prompt via stdin
-    codex.stdin.on('error', (err) => {
-      // Handle EPIPE gracefully - Codex process may have exited early
-      if (err.code !== 'EPIPE') throw err;
-    });
-    let stdout = '';
-    codex.stdout.on('data', (data) => {
-      const chunk = data.toString();
-      stdout += chunk;
-      if (verbose) {
-        process.stdout.write(chunk);
-      }
-    });
-    codex.stdin.write(prompt);
-    codex.stdin.end();
-
-    let stderr = '';
-    codex.stderr.on('data', (data) => {
-      const chunk = data.toString();
-      stderr += chunk;
-      if (verbose) {
-        process.stderr.write(chunk);
-      }
-    });
-
-    function fail(message) {
-      if (spinner) spinner.fail(message);
-      else console.error(`  Error: ${message}`);
->>>>>>> Stashed changes
-    }
-
-    try {
-      await runCodexStage({
-        prompt: stage.prompt,
-        cwd,
-        generationDir,
-        checkpoints: stage.checkpoints,
-        timeoutMs: STAGE_TIMEOUT_MS,
-        verbose,
-        onCheckpoint: (checkpointIdx) => {
-          const progress = completedCheckpoints + checkpointIdx + 1;
-          const pct = Math.round((progress / totalCheckpoints) * 100);
-          if (spinner) spinner.text = `${stage.label} (${pct}%)`;
-        },
-      });
-    } catch (error) {
-      if (spinner) spinner.fail(`Failed at: ${stage.label}`);
-      else console.error(`  Error at: ${stage.label}`);
-      console.log(`\n  Check intermediate files in: ${generationDir}`);
-      console.log(`  To resume: code-stories --resume ${genId}\n`);
-      throw error;
-    }
-
-    completedCheckpoints += stage.checkpoints.length;
+  } catch (error) {
+    if (spinner) spinner.fail('Generation failed');
+    else console.error('  Generation failed');
+    console.log(`\n  Check intermediate files in: ${generationDir}`);
+    console.log(`  To resume: code-stories --resume ${genId}\n`);
+    throw error;
   }
 
   // Finalize: validate, copy to stories dir, update manifest
