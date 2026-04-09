@@ -177,12 +177,7 @@ function runCodexStage({ prompt, cwd, generationDir, checkpoints, timeoutMs, ver
       '--add-dir', generationDir,
       '-',  // read prompt from stdin
     ];
-    const cleanEnv = { ...process.env };
-    delete cleanEnv.CLAUDECODE;
-    delete cleanEnv.CLAUDE_CODE_ENTRYPOINT;
-    delete cleanEnv.CLAUDE_CODE_SESSION;
-
-    const codex = spawn('codex', args, { cwd, env: cleanEnv });
+    const codex = spawn('codex', args, { cwd });
 
     // Send prompt via stdin
     codex.stdin.on('error', (err) => {

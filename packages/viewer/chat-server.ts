@@ -12,12 +12,6 @@ function jsonResponse(res: ServerResponse, data: unknown, status = 200) {
   res.end(JSON.stringify(data))
 }
 
-const LEGACY_CLAUDE_CODE_ENV_VARS = [
-  'CLAUDECODE',
-  'CLAUDE_CODE_ENTRYPOINT',
-  'CLAUDE_CODE_SESSION',
-] as const
-
 export function runCodex(prompt: string): Promise<string> {
   return new Promise((resolve, reject) => {
     let settled = false
@@ -29,16 +23,9 @@ export function runCodex(prompt: string): Promise<string> {
       else resolve(result!)
     }
 
-    // Strip legacy Claude Code session vars so nested Codex sessions don't inherit stale state.
-    const cleanEnv = { ...process.env }
-    for (const envVar of LEGACY_CLAUDE_CODE_ENV_VARS) {
-      delete cleanEnv[envVar]
-    }
-
     const proc = spawn('codex', ['exec', '--full-auto', '-'], {
       stdio: ['pipe', 'pipe', 'pipe'],
       cwd: storiesDir,
-      env: cleanEnv,
     })
     console.log('[chat] codex process pid:', proc.pid)
 

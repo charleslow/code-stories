@@ -27,9 +27,6 @@ dist-ssr
 stories/
 results/
 
-# Claude CLI
-.claude/
-
 # Environment variables
 .env
 .env.*
