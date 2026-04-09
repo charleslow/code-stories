@@ -10,7 +10,7 @@ set -euo pipefail
 #
 # Prerequisites:
 #   - Node.js installed
-#   - Authenticated via `claude login` (uses your Max subscription)
+#   - Authenticated via `codex login` (uses your Max subscription)
 #
 # Configuration (via environment variables):
 #   MAX_ITERATIONS   - Number of optimization cycles (default: 5)
@@ -29,15 +29,15 @@ if [ -f "$SCRIPT_DIR/.env" ]; then
   set +a
 fi
 
-# Check for Claude CLI
-if ! command -v claude &> /dev/null; then
-  echo "ERROR: Claude CLI not found."
+# Check for Codex CLI
+if ! command -v codex &> /dev/null; then
+  echo "ERROR: Codex CLI not found."
   echo ""
   echo "Please install it first:"
   echo "  npm install -g @anthropic-ai/claude-code"
   echo ""
   echo "Then authenticate:"
-  echo "  claude login"
+  echo "  codex login"
   exit 1
 fi
 

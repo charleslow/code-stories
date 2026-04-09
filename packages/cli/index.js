@@ -408,7 +408,7 @@ async function generateStory(query, options = {}) {
   }, 1000);
 
   return new Promise((resolve, reject) => {
-    // Spawn Claude CLI
+    // Spawn Codex CLI
     const allowedTools = 'Read,Grep,Glob,Write';
     const args = [
       '-p',
@@ -418,7 +418,7 @@ async function generateStory(query, options = {}) {
     if (verbose) {
       args.push('--verbose');
     }
-    const claude = spawn('claude', args, {
+    const claude = spawn('codex', args, {
       cwd,
       env: Object.fromEntries(
         Object.entries(process.env).filter(([k]) => k !== 'CLAUDECODE')
@@ -490,7 +490,7 @@ async function generateStory(query, options = {}) {
 
     claude.on('error', (error) => {
       clearTimers();
-      fail(`Failed to spawn Claude CLI: ${error.message}`);
+      fail(`Failed to spawn Codex CLI: ${error.message}`);
       reject(error);
     });
 

@@ -15,7 +15,7 @@ PR review mode clones the repo, checks out the PR branch, fetches the diff and c
 ## Requirements
 
 - Node.js 18+
-- [Claude CLI](https://claude.ai/cli) installed and configured
+- [Codex CLI](https://claude.ai/cli) installed and configured
 - A git repository to analyze
 
 For PR/MR review mode only:
@@ -147,7 +147,7 @@ cd /path/to/any/repo
 code-stories "Your question here"
 ```
 
-Requires [Claude CLI](https://claude.ai/cli) to be installed and configured.
+Requires [Codex CLI](https://claude.ai/cli) to be installed and configured.
 
 ### Publishing to npm
 

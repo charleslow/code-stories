@@ -23,17 +23,17 @@ export function runClaude(prompt: string): Promise<string> {
       else resolve(result!)
     }
 
-    // Strip CLAUDECODE env vars so nested claude sessions don't fail
+    // Strip CLAUDECODE env vars so nested codex sessions don't fail
     const cleanEnv = { ...process.env }
     delete cleanEnv.CLAUDECODE
     delete cleanEnv.CLAUDE_CODE_ENTRYPOINT
     delete cleanEnv.CLAUDE_CODE_SESSION
 
-    const proc = spawn('claude', ['-p', '--allowedTools', 'Read', '--add-dir', storiesDir], {
+    const proc = spawn('codex', ['-p', '--allowedTools', 'Read', '--add-dir', storiesDir], {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: cleanEnv,
     })
-    console.log('[chat] claude process pid:', proc.pid)
+    console.log('[chat] codex process pid:', proc.pid)
 
     const maxBuffer = 1024 * 1024
     let stdout = ''
@@ -42,14 +42,14 @@ export function runClaude(prompt: string): Promise<string> {
     // Timeout after 120 seconds
     const timer = setTimeout(() => {
       proc.kill('SIGTERM')
-      done(new Error('Claude timed out after 120 seconds'))
+      done(new Error('Codex timed out after 120 seconds'))
     }, 120000)
 
     proc.stdout.on('data', (data: Buffer) => {
       stdout += data.toString()
       if (stdout.length > maxBuffer) {
         proc.kill('SIGTERM')
-        done(new Error('Claude output exceeded max buffer size'))
+        done(new Error('Codex output exceeded max buffer size'))
       }
     })
 
@@ -59,16 +59,16 @@ export function runClaude(prompt: string): Promise<string> {
 
     proc.on('close', (code) => {
       if (code === 0) {
-        console.log('[chat] claude responded, length:', stdout.length)
+        console.log('[chat] codex responded, length:', stdout.length)
         done(null, stdout.trim())
       } else {
-        console.error('[chat] claude spawn error:', { code, stderr })
-        done(new Error(stderr || `Claude exited with code ${code}`))
+        console.error('[chat] codex spawn error:', { code, stderr })
+        done(new Error(stderr || `Codex exited with code ${code}`))
       }
     })
 
     proc.on('error', (err) => {
-      console.error('[chat] claude spawn error:', err.message)
+      console.error('[chat] codex spawn error:', err.message)
       done(new Error(err.message))
     })
 
@@ -82,7 +82,7 @@ export function runClaude(prompt: string): Promise<string> {
   })
 }
 
-// Limit concurrent Claude processes
+// Limit concurrent Codex processes
 let activeChatRequests = 0
 const MAX_CONCURRENT_CHATS = 2
 
@@ -241,7 +241,7 @@ export async function handleChatRequest(req: Connect.IncomingMessage, res: Serve
         storyFile,
       })
 
-      // Run Claude OUTSIDE the lock — this is the slow part (up to 120s)
+      // Run Codex OUTSIDE the lock — this is the slow part (up to 120s)
       const aiReply = await runClaude(prompt)
 
       // Only lock for the atomic read-modify-write of the chat file

@@ -5,7 +5,7 @@ Iteratively improves the `buildPrompt` function in `index.js` using Claude.
 ## Prerequisites
 
 - Node.js installed
-- Claude CLI installed and authenticated (`npm install -g @anthropic-ai/claude-code && claude login`)
+- Codex CLI installed and authenticated (`npm install -g @anthropic-ai/claude-code && codex login`)
 
 ## Run
 
