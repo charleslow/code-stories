@@ -82,9 +82,9 @@ const PR_JSON_SCHEMA = `{
   ]
 }`;
 
-// Build stage-specific prompts for PR review story generation.
-// Returns an array of stage objects, each with a prompt for a separate LLM call.
-export function buildPRStagePrompts(query, generationDir, commitHash, generationId, repoId, prData) {
+// Build a single prompt for PR review story generation.
+// Returns { prompt, checkpoints } for a single LLM call.
+export function buildPRPrompt(query, generationDir, commitHash, generationId, repoId, prData) {
   const { metadata, diff, rawDiff } = prData;
 
   // Write diffs to files so the agent can grep through them
@@ -116,7 +116,7 @@ export function buildPRStagePrompts(query, generationDir, commitHash, generation
 
 **PR #${metadata.number}: ${metadata.title}**
 - Author: ${metadata.author}
-- Base: ${metadata.baseBranch} ← Head: ${metadata.headBranch}
+- Base: ${metadata.baseBranch} <- Head: ${metadata.headBranch}
 - URL: ${metadata.url}
 ${metadata.labels.length > 0 ? `- Labels: ${metadata.labels.join(', ')}` : ''}
 
@@ -151,31 +151,47 @@ Each snippet has a \`type\` field: either \`"code"\` or \`"diff"\`.
 - Think carefully about which type is best for each segment. Not every snippet needs to be a diff.
 - Don't assume the reader knows the codebase well — provide context generously.`;
 
-  const preamble = `You are an expert code reviewer and narrator. Your job is to help create a "PR review story" —
+  return {
+    checkpoints: [
+      { file: 'exploration_scan.md', checkpoint: 'EXPLORATION_SCANNED' },
+      { file: 'exploration_read.md', checkpoint: 'EXPLORATION_READ' },
+      { file: 'exploration_notes.md', checkpoint: 'STAGE_1_COMPLETE' },
+      { file: 'narrative_outline.md', checkpoint: 'STAGE_2_COMPLETE' },
+      { file: 'snippets_mapping.md', checkpoint: 'STAGE_3_COMPLETE' },
+      { file: 'explanations_draft.md', checkpoint: 'STAGE_4_COMPLETE' },
+      { file: 'story.json', checkpoint: null },
+    ],
+    prompt: `You are an expert code reviewer and narrator. Your job is to help create a "PR review story" —
 a guided, chapter-by-chapter walkthrough of a pull request that helps reviewers understand what
 changed, why it changed, and what to watch for. The aim is not just to communicate information,
 but to give the reviewer a deep understanding of the changes and their implications.
 
 The user's query is: "${query}"
 
-${prContext}`;
+${prContext}
 
-  return [
-    // Stage 1: Explore the Codebase & Analyze Diff
-    {
-      label: 'Analyzing diff & codebase',
-      checkpoints: [
-        { file: 'exploration_scan.md', checkpoint: 'EXPLORATION_SCANNED' },
-        { file: 'exploration_read.md', checkpoint: 'EXPLORATION_READ' },
-        { file: 'exploration_notes.md', checkpoint: 'STAGE_1_COMPLETE' },
-      ],
-      prompt: `${preamble}
+${snippetTypes}
 
-## Your Task: Explore the Codebase & Analyze the Diff
+You will produce a single JSON object matching this schema:
+${PR_JSON_SCHEMA}
 
-You are performing Stage 1 of a multi-stage PR review story pipeline. Your job is to
-understand both the codebase and the changes. Later stages will use your notes to plan
-chapters, select snippets, and write explanations.
+Use these fixed values:
+- id: "${generationId}"
+- commitHash: "${commitHash}"
+- repo: ${repoId ? `"${repoId}"` : "null"}
+- createdAt: current ISO 8601 timestamp
+- query: "${query}"
+- pr: populate with the PR metadata provided above
+
+## Instructions
+
+Follow these stages in order. Each stage has checkpoint files you MUST write before
+proceeding to the next stage. If a checkpoint file already exists with the expected
+marker, you may skip that stage.
+
+---
+
+## Stage 1: Explore the Codebase & Analyze the Diff
 
 ### Step 1.1: Analyze the diff
 Study the diff provided above. Identify the key changes, their scope, and potential concerns.
@@ -199,28 +215,13 @@ Synthesize your understanding of:
 - Impact on the broader codebase
 
 **Checkpoint:** Write your full exploration notes to ${generationDir}/exploration_notes.md.
-End the file with the line: STAGE_1_COMPLETE`,
-    },
+End the file with the line: STAGE_1_COMPLETE
 
-    // Stage 2: Plan the Outline
-    {
-      label: 'Planning outline',
-      checkpoints: [
-        { file: 'narrative_outline.md', checkpoint: 'STAGE_2_COMPLETE' },
-      ],
-      prompt: `${preamble}
+---
 
-## Previous Work
+## Stage 2: Plan the Outline
 
-The codebase and diff have already been analyzed. Read these files to review the findings:
-- ${generationDir}/exploration_scan.md (diff analysis & relevant files)
-- ${generationDir}/exploration_read.md (context notes)
-- ${generationDir}/exploration_notes.md (findings & concerns)
-
-## Your Task: Plan the Outline
-
-You are performing Stage 2 of a multi-stage PR review story pipeline. Using the
-exploration notes from Stage 1, design the chapter outline for the PR review story.
+Review your exploration notes, then design the chapter outline for the PR review story.
 
 Design 5-20 chapters grouped by logical concern (NOT file-by-file). Each chapter should have
 ONE clear teaching point.
@@ -244,29 +245,13 @@ Before finalizing, verify your outline against this checklist and revise if need
 7. Does the story cover both what changed and why?
 
 **Checkpoint:** Write your verified outline to ${generationDir}/narrative_outline.md.
-End the file with the line: STAGE_2_COMPLETE`,
-    },
+End the file with the line: STAGE_2_COMPLETE
 
-    // Stage 3: Identify Snippets
-    {
-      label: 'Identifying snippets',
-      checkpoints: [
-        { file: 'snippets_mapping.md', checkpoint: 'STAGE_3_COMPLETE' },
-      ],
-      prompt: `${preamble}
+---
 
-${snippetTypes}
+## Stage 3: Identify Snippets
 
-## Previous Work
-
-Read these files from prior stages:
-- ${generationDir}/exploration_notes.md (findings & concerns)
-- ${generationDir}/narrative_outline.md (chapter outline)
-
-## Your Task: Identify Snippets
-
-You are performing Stage 3 of a multi-stage PR review story pipeline. Using the chapter
-outline from Stage 2, select the exact code or diff segments to show in each chapter.
+Review your outline, then select the exact code or diff segments to show in each chapter.
 
 Constraints:
 - Each chapter's total code should be 20-70 lines across all snippets. Absolute max 80 lines.
@@ -285,30 +270,14 @@ For each chapter, document:
 - Read the actual source files and verify the code content at those line ranges
 
 **Checkpoint:** Write your snippet selections to ${generationDir}/snippets_mapping.md.
-End the file with the line: STAGE_3_COMPLETE`,
-    },
+End the file with the line: STAGE_3_COMPLETE
 
-    // Stage 4: Craft Explanations
-    {
-      label: 'Crafting explanations',
-      checkpoints: [
-        { file: 'explanations_draft.md', checkpoint: 'STAGE_4_COMPLETE' },
-      ],
-      prompt: `${preamble}
+---
 
-## Previous Work
+## Stage 4: Craft Explanations
 
-Read these files from prior stages:
-- ${generationDir}/exploration_notes.md (findings & concerns)
-- ${generationDir}/narrative_outline.md (chapter outline)
-- ${generationDir}/snippets_mapping.md (selected code snippets)
-
-## Your Task: Craft Explanations
-
-You are performing Stage 4 of a multi-stage PR review story pipeline. Using the outline
-and snippet selections from prior stages, write the explanation for each chapter.
-
-Write the explanation for each chapter in markdown.
+Review your outline and snippet selections, then write the explanation for each chapter
+in markdown.
 
 Guidelines:
 - Explanation length MUST vary based on complexity (60-300 words range)
@@ -323,44 +292,20 @@ Guidelines:
 - Tone: friendly, thorough reviewer — not adversarial, not rubber-stamping
 
 **Checkpoint:** Write your draft explanations to ${generationDir}/explanations_draft.md.
-End the file with the line: STAGE_4_COMPLETE`,
-    },
+End the file with the line: STAGE_4_COMPLETE
 
-    // Stage 5: Quality Check & Finalize
-    {
-      label: 'Finalizing story',
-      checkpoints: [
-        { file: 'story.json', checkpoint: null },
-      ],
-      prompt: `${preamble}
+---
 
-${snippetTypes}
+## Stage 5: Quality Check & Final Output
 
-You will produce a single JSON object matching this schema:
-${PR_JSON_SCHEMA}
-
-Use these fixed values:
-- id: "${generationId}"
-- commitHash: "${commitHash}"
-- repo: ${repoId ? `"${repoId}"` : "null"}
-- createdAt: current ISO 8601 timestamp
-- query: "${query}"
-- pr: populate with the PR metadata provided above
-
-## Previous Work
-
-Read ALL of these files from prior stages:
+Read back all your work:
 - ${generationDir}/exploration_notes.md (findings & concerns)
 - ${generationDir}/narrative_outline.md (chapter outline)
 - ${generationDir}/snippets_mapping.md (selected code snippets)
 - ${generationDir}/explanations_draft.md (draft explanations)
 
-## Your Task: Quality Check & Final Output
-
-You are performing the final stage of a multi-stage PR review story pipeline. Assemble
-the complete story JSON from the prior stages' work.
-
-Before outputting, verify each constraint. If any check fails, revise before outputting.
+Assemble the complete story JSON from your work. Before outputting, verify each
+constraint. If any check fails, revise before outputting.
 
 1. **Snippet line cap**: No chapter exceeds 80 total snippet lines.
 2. **Context before diffs**: Each chapter that shows diffs also provides context.
@@ -379,6 +324,5 @@ Output the final JSON as a single fenced code block (\`\`\`json ... \`\`\`).
 The JSON must be valid and match the schema exactly.
 
 Write the JSON to: ${generationDir}/story.json`,
-    },
-  ];
+  };
 }
