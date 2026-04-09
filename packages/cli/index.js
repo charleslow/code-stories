@@ -360,6 +360,7 @@ async function generateStory(query, options = {}) {
       query,
       commitHash,
       repoId,
+      sourceCwd: cwd,
       isPR: !!prData,
       prData: prData || null,
       createdAt: new Date().toISOString(),
@@ -412,6 +413,8 @@ async function generateStory(query, options = {}) {
     const args = [
       'exec',
       '--full-auto',
+      '-C', cwd,
+      '--add-dir', generationDir,
       '-',  // read prompt from stdin
     ];
     const cleanEnv = { ...process.env };
@@ -420,7 +423,7 @@ async function generateStory(query, options = {}) {
     delete cleanEnv.CLAUDE_CODE_SESSION;
 
     const codex = spawn('codex', args, {
-      cwd: generationDir,
+      cwd,
       env: cleanEnv,
     });
 
@@ -615,10 +618,36 @@ program
 
       // For PR stories with a remote repo, we need to re-clone
       let cwd = process.cwd();
-      if (meta.repoId && meta.isPR && meta.prData) {
-        // PR stories need the cloned repo — check if we can work from cwd
-        // For now, use cwd (assumes user is in the right directory or repo was local)
-        console.log('  Note: PR resume works best from the original repo directory.\n');
+      if (meta.repoId) {
+        const detected = detectPlatform({ repoArg: meta.repoId });
+        const host = detected.host;
+
+        if (meta.isPR && meta.prData) {
+          const resolved = resolveCli(detected.platform);
+          const spinner = ora({ prefixText: '  ' }).start(`Re-cloning ${meta.repoId} for PR resume...`);
+          try {
+            const result = cloneRepoForPR(meta.repoId, meta.prData.metadata.number, host, resolved.cli, spinner);
+            activeCloneDir = result.tempDir;
+            cwd = result.tempDir;
+            spinner.stop();
+          } catch (error) {
+            spinner.fail(error.message);
+            process.exit(1);
+          }
+        } else {
+          const spinner = ora({ prefixText: '  ' }).start(`Re-cloning ${meta.repoId} for resume...`);
+          try {
+            const result = cloneRepo(meta.repoId, host, spinner);
+            activeCloneDir = result.tempDir;
+            cwd = result.tempDir;
+            spinner.stop();
+          } catch (error) {
+            spinner.fail(error.message);
+            process.exit(1);
+          }
+        }
+      } else if (meta.sourceCwd && fs.existsSync(meta.sourceCwd)) {
+        cwd = meta.sourceCwd;
       }
 
       try {
