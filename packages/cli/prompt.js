@@ -129,6 +129,9 @@ Guidelines:
 - Assume the reader will ask follow-up questions about terminology, exact insertion
   points, runtime behavior, and design implications. Shape the outline so those
   questions are answered by the story itself whenever the code supports it.
+- Assume the reader may be technically strong but new to this ecosystem. The story
+  should not stop at "component A calls component B"; it should show what gets handed
+  off, where the boundary lives, and why that boundary exists.
 
 Before finalizing, verify your outline against this checklist and revise if needed:
 1. Does each chapter have exactly one clear teaching point?
@@ -239,6 +242,10 @@ Guidelines:
      matters here"),
   4. the implication ("why this design exists, what tradeoff it makes, or what would
      break if it changed").
+- Do not restate an entire snippet at a high level if the reader still would not know
+  where a value is inserted, which component receives it next, or what condition changes
+  the control flow. Explanations should close at least one of those gaps whenever the
+  snippet supports it.
 - On first use of a technical term, define it in plain language as if the reader is new
   to the ecosystem. Do not assume terms like RPC, reflection, renderer process, AST,
   registry, or coroutine are already known.
@@ -293,6 +300,9 @@ constraint. If any check fails, revise before outputting.
    important handoff boundaries, covers at least one meaningful runtime behavior or
    invariant where relevant, and states major omissions or scope boundaries instead of
    leaving them implicit.
+9. **Grounding check**: In snippet-bearing chapters, the reader can answer at least one
+   concrete "where exactly?", "what happens next?", or "what happens if this fails?"
+   question from the explanation without opening another file.
 
 For each snippet, read the actual source file to verify the content matches exactly
 and the line numbers are accurate. Fix any discrepancies.
