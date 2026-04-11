@@ -2,6 +2,11 @@
 
 Generate narrative-driven code stories using Codex. A code story is a guided walkthrough of your codebase that answers questions like "How does authentication work?" or "Trace a request from API to database".
 
+Stories are optimized to answer the first layer of newcomer follow-up questions, not
+just summarize modules. The generator now aims to define unfamiliar terms, make key
+handoff boundaries explicit, point to concrete lines that do the important work, and
+call out major scope limits or runtime caveats when the code supports them.
+
 ## Installation
 
 ```bash

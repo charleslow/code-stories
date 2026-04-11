@@ -215,6 +215,13 @@ Synthesize your understanding of:
 - How the changes achieve this goal
 - Potential concerns, edge cases, or issues
 - Impact on the broader codebase
+- Unfamiliar terms, APIs, or framework concepts a newcomer will need defined
+- Important boundaries: which caller, subsystem, process, or layer hands off to which
+  next layer after the changed code runs
+- Runtime behavior that matters for review: ordering, retries, fallback paths, failure
+  handling, or invariants the patch relies on
+- Scope boundaries: what the PR obviously does not cover, even if a reader might assume
+  it does from the diff alone
 
 **Checkpoint:** Write your full exploration notes to ${generationDir}/exploration_notes.md.
 End the file with the line: STAGE_1_COMPLETE
@@ -236,6 +243,10 @@ Guidelines:
 - Include inline review callouts for concerns, suggestions, and questions
 - End with a summary chapter (no snippets) that consolidates findings and overall assessment
 - Chapter labels should be 2-4 words (for the sidebar)
+- The overview should define the most important unfamiliar terms and state what this
+  review story can and cannot conclude from the diff plus surrounding code
+- If the PR changes an end-to-end flow, reserve chapters for the boundary crossings so
+  the reader can see what calls into the patch, what leaves it, and what handles it next
 
 Before finalizing, verify your outline against this checklist and revise if needed:
 1. Does each chapter have exactly one clear teaching point?
@@ -245,6 +256,10 @@ Before finalizing, verify your outline against this checklist and revise if need
 5. Are there any redundant chapters that could be merged?
 6. Is the final chapter a prose-only summary with consolidated concerns?
 7. Does the story cover both what changed and why?
+8. Where will important terms be defined before the reader hits the diff?
+9. Which chapters make boundary crossings explicit instead of only summarizing files?
+10. Which chapters explain a meaningful runtime behavior, edge case, or invariant?
+11. Where does the story state major scope limits or unverifiable assumptions?
 
 **Checkpoint:** Write your verified outline to ${generationDir}/narrative_outline.md.
 End the file with the line: STAGE_2_COMPLETE
@@ -291,6 +306,13 @@ Guidelines:
   * \`[!QUESTION]\` — things the reviewer should verify or ask about (renders yellow)
   * \`[!NOTE]\` — important context or observations (renders default)
 - Explain the intent behind changes, not just what they do
+- For each snippet-bearing chapter, explain at least TWO of the following when the code
+  supports it: the boundary or handoff, the concrete mechanics, the runtime behavior, or
+  the design implication for reviewers
+- Do not assume terms like RPC, reflection, hydration, worker process, transaction, or
+  debounce are self-explanatory. Define unfamiliar terms on first use in plain language.
+- If the patch omits important surrounding machinery, fallback branches, or external
+  guarantees, say so explicitly so the review story does not overclaim completeness
 - Tone: friendly, thorough reviewer — not adversarial, not rubber-stamping
 
 **Checkpoint:** Write your draft explanations to ${generationDir}/explanations_draft.md.
@@ -316,6 +338,13 @@ constraint. If any check fails, revise before outputting.
 5. **Concern distribution**: Review concerns are spread across relevant chapters.
 6. **PR field populated**: The \`pr\` field contains full PR metadata.
 7. **Query coverage**: The story addresses the user's query.
+8. **Follow-up resistance**: The story defines key terms before using them, names the
+   important handoff boundaries, covers at least one meaningful runtime behavior or
+   invariant where relevant, and states major omissions or scope limits instead of
+   leaving them implicit.
+9. **Grounding check**: In snippet-bearing chapters, the reader can answer at least one
+   concrete "where exactly?", "what happens next?", or "what happens if this fails?"
+   question from the explanation without reopening the diff.
 
 For each snippet, read the actual source file to verify the content matches exactly
 and the line numbers are accurate. Fix any discrepancies.
