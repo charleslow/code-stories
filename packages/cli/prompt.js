@@ -81,6 +81,13 @@ Synthesize your understanding of:
 - Core data structures and algorithms
 - Design patterns and architectural decisions
 - Interesting "why" decisions (not just "what")
+- Unfamiliar terms or framework jargon a newcomer will need defined
+- Important handoff boundaries (who calls whom, what gets passed, which process or
+  subsystem owns the next step)
+- Runtime invariants, failure modes, or edge cases that are central to understanding
+  behavior
+- Important scope boundaries: what this story can explain directly from code, and what
+  is only implied or intentionally out of scope
 
 **Checkpoint:** Write your full exploration notes to ${generationDir}/exploration_notes.md.
 End the file with the line: STAGE_1_COMPLETE
@@ -116,6 +123,12 @@ Guidelines:
 - Before using a technical term for the first time, ensure it has been introduced or
   defined. If the query uses specialized terminology, the overview chapter should
   briefly explain these terms.
+- If the query is asking for an end-to-end flow, architecture, or "how does X work"
+  walkthrough, reserve chapters for the important boundary crossings. Do not only
+  describe components in isolation; explicitly show the handoff points between them.
+- Assume the reader will ask follow-up questions about terminology, exact insertion
+  points, runtime behavior, and design implications. Shape the outline so those
+  questions are answered by the story itself whenever the code supports it.
 
 Before finalizing, verify your outline against this checklist and revise if needed:
 1. Does each chapter have exactly one clear teaching point?
@@ -132,6 +145,14 @@ Before finalizing, verify your outline against this checklist and revise if need
     specific technology, concept, or component mentioned? If the query asks about
     "numpy, pytorch, tensorflow and jax", verify that all four are covered. If any
     are missing, add chapters or expand existing ones.
+11. **Terminology coverage**: Where will unfamiliar terms be defined in plain English
+    before the reader encounters them in the code?
+12. **Boundary coverage**: Which chapters make the producer/consumer, caller/callee,
+    or process/subsystem handoff explicit?
+13. **Behavior coverage**: Which chapters explain an important runtime invariant,
+    failure path, retry path, ordering guarantee, or edge case?
+14. **Scope coverage**: Where will the story say what it is NOT covering, or what is
+    only implied rather than directly shown?
 
 **Checkpoint:** Write your verified outline to ${generationDir}/narrative_outline.md.
 End the file with the line: STAGE_2_COMPLETE
@@ -200,14 +221,27 @@ Guidelines:
   Even a 3-sentence explanation should include one sentence about the design rationale
   or the insight the reader should take away. "What it does" alone is never sufficient.
 - The overview chapter (first) has an empty snippets array, just explanation. Keep it
-  to 150-200 words. Define key terms concisely (one sentence each, not full paragraphs).
-  The overview should orient the reader, not teach — the teaching happens in subsequent
-  chapters.
+  to 150-220 words. Define key terms concisely (one sentence each, not full paragraphs).
+  Include a brief mental model of the whole system, a short glossary/list of the most
+  important unfamiliar terms, and one explicit note about what this story will and will
+  not cover. The overview should orient the reader, not teach — the teaching happens in
+  subsequent chapters.
 - The summary chapter (last) has an empty snippets array, just explanation. Keep it
   to 150-250 words. Recap the key insights and design patterns covered in the story,
   highlight any important takeaways, and give the reader a sense of closure. Don't
   just list what was covered — synthesize it into a coherent "big picture" reflection.
 - Focus on "why" and insight, not just describing what the code does
+- Every non-summary chapter must be concrete enough to preempt likely follow-up
+  questions. When the code supports it, explain at least TWO of the following:
+  1. the boundary or handoff ("what comes in, what goes out, and who handles it next"),
+  2. the mechanics ("which exact lines transform or route the data"),
+  3. the runtime behavior ("what invariant, ordering rule, retry path, or failure case
+     matters here"),
+  4. the implication ("why this design exists, what tradeoff it makes, or what would
+     break if it changed").
+- On first use of a technical term, define it in plain language as if the reader is new
+  to the ecosystem. Do not assume terms like RPC, reflection, renderer process, AST,
+  registry, or coroutine are already known.
 - Reference specific lines in the code snippets consistently across ALL chapters that
   have snippets (e.g., "Line 42 does X because..." or "Lines 10-15 handle...")
 - Use varied transitions between chapters. Don't use the same transition pattern in
@@ -219,6 +253,13 @@ Guidelines:
   briefly acknowledge what was skipped (e.g., "Between these two sections, the method
   handles error cases we can skip over") so the reader understands the code's structure
   without seeing every line.
+- If the chapter leaves out meaningful branches, fallback logic, or adjacent machinery,
+  say so explicitly. Good stories name their scope boundaries instead of pretending the
+  shown snippet is the whole story.
+- Use lightweight structure when it helps clarity. Brief labels such as
+  \`**Boundary:**\`, \`**Mechanics:**\`, \`**Why:**\`, or \`**Caveat:**\` are welcome when
+  they make the explanation easier to scan. Do not add all of them mechanically to every
+  chapter; use them to clarify dense or behavior-heavy sections.
 - Tone: friendly, insightful colleague — not a textbook, not a standup routine
 - Inject some liveliness where appropriate (noting a clever trick, a surprising choice,
   or a quote from a comment), but don't force it
@@ -248,6 +289,10 @@ constraint. If any check fails, revise before outputting.
 5. **Transition variety**: No opener pattern appears in more than 2 non-overview chapters.
 6. **Explanation length ratio**: Shortest-to-longest non-overview ratio is at least 1:2.
 7. **Query coverage**: All technologies/concepts mentioned in the query are covered.
+8. **Follow-up resistance**: The story defines key terms before using them, names the
+   important handoff boundaries, covers at least one meaningful runtime behavior or
+   invariant where relevant, and states major omissions or scope boundaries instead of
+   leaving them implicit.
 
 For each snippet, read the actual source file to verify the content matches exactly
 and the line numbers are accurate. Fix any discrepancies.
