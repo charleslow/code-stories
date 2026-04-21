@@ -29,7 +29,7 @@ export function LandingPage({ recentStories, onLoadStory }: LandingPageProps) {
       }
       // If it looks like a GitHub shorthand (user/repo/story-id or user/repo:story-id)
       else {
-        const shorthandMatch = trimmed.match(/^([^\/]+\/[^\/]+)[\/:]([a-f0-9-]+)$/i);
+        const shorthandMatch = trimmed.match(/^([^/]+\/[^/]+)[/:]([a-f0-9-]+)$/i);
         if (shorthandMatch) {
           const [, repo, storyId] = shorthandMatch;
           url = `https://raw.githubusercontent.com/${repo}/main/stories/${storyId}.json`;

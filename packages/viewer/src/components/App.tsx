@@ -13,27 +13,43 @@ import { StoryViewer } from './StoryViewer';
 import { LoadingView } from './LoadingView';
 import { ErrorBoundary } from './ErrorBoundary';
 
+const DISPLAY_MODE_STORAGE_KEY = 'code-stories-display-mode';
+
+type DisplayMode = 'normal' | 'eink';
+
+function getInitialDisplayMode(): DisplayMode {
+  try {
+    return window.localStorage.getItem(DISPLAY_MODE_STORAGE_KEY) === 'eink' ? 'eink' : 'normal';
+  } catch {
+    return 'normal';
+  }
+}
+
+function saveDisplayMode(displayMode: DisplayMode): void {
+  try {
+    window.localStorage.setItem(DISPLAY_MODE_STORAGE_KEY, displayMode);
+  } catch {
+    // Ignore localStorage errors
+  }
+}
+
 export function App() {
   const [appState, setAppState] = useState<AppState>('home');
   const [currentStory, setCurrentStory] = useState<Story | null>(null);
   const [currentUrl, setCurrentUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [recentStories, setRecentStories] = useState<RecentStory[]>([]);
+  const [recentStories, setRecentStories] = useState<RecentStory[]>(getRecentStories);
   const [chatAvailable, setChatAvailable] = useState(false);
+  const [displayMode, setDisplayMode] = useState<DisplayMode>(getInitialDisplayMode);
 
-  // Load recent stories and check chat availability on mount
   useEffect(() => {
-    setRecentStories(getRecentStories());
+    document.documentElement.dataset.displayMode = displayMode;
+    saveDisplayMode(displayMode);
+  }, [displayMode]);
+
+  // Check chat availability on mount
+  useEffect(() => {
     checkChatAvailable().then(setChatAvailable);
-  }, []);
-
-  // Check URL params on mount
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const storyUrl = getStoryUrlFromParams(params);
-    if (storyUrl) {
-      loadStory(storyUrl);
-    }
   }, []);
 
   const loadStory = useCallback(async (url: string) => {
@@ -59,6 +75,17 @@ export function App() {
       setAppState('error');
     }
   }, []);
+
+  // Check URL params on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const storyUrl = getStoryUrlFromParams(params);
+    if (storyUrl) {
+      queueMicrotask(() => {
+        void loadStory(storyUrl);
+      });
+    }
+  }, [loadStory]);
 
   const handleBack = useCallback(() => {
     setCurrentStory(null);
@@ -107,9 +134,17 @@ export function App() {
       )}
       {appState === 'reading' && currentStory && (
         <ErrorBoundary>
-          <StoryViewer story={currentStory} onBack={handleBack} chatAvailable={chatAvailable} />
+          <StoryViewer
+            story={currentStory}
+            onBack={handleBack}
+            chatAvailable={chatAvailable}
+            displayMode={displayMode}
+            onDisplayModeChange={setDisplayMode}
+          />
         </ErrorBoundary>
       )}
     </div>
   );
 }
+
+export type { DisplayMode };

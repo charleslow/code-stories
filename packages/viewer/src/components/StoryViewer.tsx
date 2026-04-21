@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Story } from '../types';
+import type { DisplayMode } from './App';
 import { Sidebar } from './Sidebar';
 import { ChapterDisplay } from './ChapterDisplay';
 
@@ -7,10 +8,13 @@ interface StoryViewerProps {
   story: Story;
   onBack: () => void;
   chatAvailable?: boolean;
+  displayMode: DisplayMode;
+  onDisplayModeChange: (mode: DisplayMode) => void;
 }
 
-export function StoryViewer({ story, onBack, chatAvailable }: StoryViewerProps) {
+export function StoryViewer({ story, onBack, chatAvailable, displayMode, onDisplayModeChange }: StoryViewerProps) {
   const [currentChapterIndex, setCurrentChapterIndex] = useState(0);
+  const nextDisplayMode = displayMode === 'eink' ? 'normal' : 'eink';
 
   const goToPrev = useCallback(() => {
     setCurrentChapterIndex((prev) => Math.max(0, prev - 1));
@@ -55,6 +59,14 @@ export function StoryViewer({ story, onBack, chatAvailable }: StoryViewerProps) 
         <button className="back-button" onClick={onBack}>
           ← Back
         </button>
+        <button
+          className="display-mode-toggle"
+          onClick={() => onDisplayModeChange(nextDisplayMode)}
+          aria-pressed={displayMode === 'eink'}
+          title={displayMode === 'eink' ? 'Switch to normal mode' : 'Switch to e-ink mode'}
+        >
+          {displayMode === 'eink' ? 'Normal' : 'E-ink'}
+        </button>
         <h1>{story.title}</h1>
         {story.pr && (
           <a className="pr-badge-link" href={story.pr.url} target="_blank" rel="noopener noreferrer">
@@ -83,6 +95,7 @@ export function StoryViewer({ story, onBack, chatAvailable }: StoryViewerProps) 
             storyPR={story.pr}
             chatAvailable={chatAvailable}
             storyId={story.id}
+            displayMode={displayMode}
           />
         </main>
       </div>

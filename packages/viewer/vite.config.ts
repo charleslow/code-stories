@@ -2,20 +2,30 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import fs from 'fs'
 import path from 'path'
+import type { Connect } from 'vite'
+import type { ServerResponse } from 'http'
 import { handleChatRequest, storiesDir } from './chat-server'
 
+interface LocalStoryEntry {
+  id: string
+  title: string
+  createdAt: string | null
+  url: string
+  mtime: number
+}
+
 // Shared middleware for serving local stories (works in both dev and preview)
-function localStoriesMiddleware(req: any, res: any, next: any) {
+function localStoriesMiddleware(req: Connect.IncomingMessage, res: ServerResponse, next: Connect.NextFunction) {
   // Try chat endpoints first
   handleChatRequest(req, res, () => {
     // Discovery endpoint: list all stories
     if (req.url === '/_discover') {
       try {
         const files = fs.readdirSync(storiesDir).filter((f: string) => f.endsWith('.json') && f !== 'manifest.json' && !f.endsWith('.chat.json'))
-        const stories = files.map((f: string) => {
+        const stories = files.map((f: string): LocalStoryEntry | null => {
           try {
             const filePath = path.join(storiesDir, f)
-            const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
+            const data = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as { id?: string; title?: string; createdAt?: string | null }
             const mtime = fs.statSync(filePath).mtimeMs
             return {
               id: data.id || f.replace('.json', ''),
@@ -25,13 +35,18 @@ function localStoriesMiddleware(req: any, res: any, next: any) {
               mtime,
             }
           } catch { return null }
-        }).filter(Boolean)
+        }).filter((story): story is LocalStoryEntry => story !== null)
         // Sort by file modification time, most recent first
-        stories.sort((a: any, b: any) => b.mtime - a.mtime)
+        stories.sort((a, b) => b.mtime - a.mtime)
         // Remove mtime before sending to client
-        stories.forEach((s: any) => delete s.mtime)
+        const responseStories = stories.map((story) => ({
+          id: story.id,
+          title: story.title,
+          createdAt: story.createdAt,
+          url: story.url,
+        }))
         res.setHeader('Content-Type', 'application/json')
-        res.end(JSON.stringify(stories))
+        res.end(JSON.stringify(responseStories))
       } catch {
         res.setHeader('Content-Type', 'application/json')
         res.end('[]')

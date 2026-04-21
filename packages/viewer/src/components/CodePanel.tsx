@@ -1,5 +1,7 @@
-import { Highlight, themes } from 'prism-react-renderer';
+import { Highlight, themes, type PrismTheme } from 'prism-react-renderer';
 import type { CodeSnippet, PRMetadata, DiffLine } from '../types';
+import { createContrastAmplifiedTheme } from '../theme/codeContrast';
+import type { DisplayMode } from './App';
 
 // Register Java, Ruby, and Bash grammars missing from prism-react-renderer's
 // default bundle. The setup module exposes the Prism instance globally so the
@@ -16,6 +18,11 @@ const EXT_TO_LANGUAGE: Record<string, string> = {
   '.rb': 'ruby', '.sh': 'bash', '.css': 'css', '.html': 'markup',
   '.json': 'json', '.yaml': 'yaml', '.yml': 'yaml', '.md': 'markdown', '.sql': 'sql',
 };
+
+const EINK_CODE_THEME: PrismTheme = createContrastAmplifiedTheme(themes.github, {
+  backgroundColor: '#ffffff',
+  minContrastRatio: 7,
+});
 
 function getLanguageFromPath(filePath: string): string {
   const dot = filePath.lastIndexOf('.');
@@ -61,9 +68,10 @@ interface CodePanelProps {
   storyQuery?: string;
   storyRepo?: string | null;
   storyPR?: PRMetadata;
+  displayMode: DisplayMode;
 }
 
-export function CodePanel({ snippets, style, storyQuery, storyRepo, storyPR }: CodePanelProps) {
+export function CodePanel({ snippets, style, storyQuery, storyRepo, storyPR, displayMode }: CodePanelProps) {
   if (snippets.length === 0) {
     const hasMetadata = storyQuery || storyRepo || storyPR;
     return (
@@ -131,7 +139,7 @@ export function CodePanel({ snippets, style, storyQuery, storyRepo, storyPR }: C
               <DiffSnippetView lines={snippet.lines!} />
             ) : (
               <Highlight
-                theme={themes.oneDark}
+                theme={displayMode === 'eink' ? EINK_CODE_THEME : themes.oneDark}
                 code={snippet.content}
                 language={getLanguageFromPath(snippet.filePath)}
               >
