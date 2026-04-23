@@ -1,0 +1,44 @@
+{
+  "id": "eink-diff-smoke",
+  "title": "E-ink Diff Smoke",
+  "query": "Exercise e-ink diff rendering.",
+  "repo": "local/smoke",
+  "commitHash": "0000000000000000000000000000000000000000",
+  "createdAt": "2026-04-21T00:00:00.000Z",
+  "chapters": [
+    {
+      "id": "chapter-0",
+      "label": "Diff Contrast",
+      "snippets": [
+        {
+          "filePath": "src/example.ts",
+          "startLine": 1,
+          "endLine": 3,
+          "content": "",
+          "type": "diff",
+          "lines": [
+            {
+              "oldLineNumber": 1,
+              "newLineNumber": 1,
+              "type": "context",
+              "content": "const mode = 'normal';"
+            },
+            {
+              "oldLineNumber": 2,
+              "newLineNumber": null,
+              "type": "removed",
+              "content": "const contrast = 'low';"
+            },
+            {
+              "oldLineNumber": null,
+              "newLineNumber": 2,
+              "type": "added",
+              "content": "const contrast = 'high';"
+            }
+          ]
+        }
+      ],
+      "explanation": "Small fixture for visual diff contrast smoke testing."
+    }
+  ]
+}
