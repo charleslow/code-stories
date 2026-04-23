@@ -517,66 +517,8 @@ async function generateStory(query, options = {}) {
 
   const genId = path.basename(generationDir);
 
-  // PR mode: monolithic Codex pipeline (unchanged)
-  if (prData) {
-    const { prompt, checkpoints } = buildPRPrompt(query, generationDir, commitHash, generationId, repoId, prData);
-
-    let completedCheckpoints = 0;
-    for (const cp of checkpoints) {
-      const filePath = path.join(generationDir, cp.file);
-      if (!fs.existsSync(filePath)) break;
-      if (cp.checkpoint) {
-        const content = fs.readFileSync(filePath, 'utf-8');
-        if (!content.includes(cp.checkpoint)) break;
-      }
-      completedCheckpoints++;
-    }
-
-    const startPercent = Math.round((completedCheckpoints / checkpoints.length) * 100);
-    const initialLabel = completedCheckpoints < STAGES.length ? STAGES[completedCheckpoints].label : 'Finalizing';
-    const spinner = verbose
-      ? null
-      : ora({ text: `${initialLabel} (${startPercent}%)`, prefixText: '  ' }).start();
-
-    try {
-      await runCodex({
-        prompt,
-        cwd,
-        generationDir,
-        checkpoints,
-        timeoutMs: TIMEOUT_MS,
-        verbose,
-        onCheckpoint: (checkpointIdx) => {
-          const pct = Math.round(((checkpointIdx + 1) / checkpoints.length) * 100);
-          const nextIdx = checkpointIdx + 1;
-          const label = nextIdx < STAGES.length ? STAGES[nextIdx].label : 'Finalizing';
-          if (spinner) spinner.text = `${label} (${pct}%)`;
-        },
-      });
-    } catch (error) {
-      if (spinner) spinner.fail('Generation failed');
-      else console.error('  Generation failed');
-      console.log(`\n  Check intermediate files in: ${generationDir}`);
-      console.log(`  To resume: code-stories --resume ${genId}\n`);
-      throw error;
-    }
-
-    try {
-      const { story, finalPath } = finalizeStory(generationDir);
-      if (spinner) spinner.succeed(`Story generated: ${story.title}`);
-      else console.log(`  Done: Story generated: ${story.title}`);
-      console.log(`\n  Saved to: ${finalPath}\n`);
-      return story;
-    } catch (error) {
-      if (spinner) spinner.fail(`Error processing story: ${error.message}`);
-      else console.error(`  Error processing story: ${error.message}`);
-      throw error;
-    }
-  }
-
-  // Standard mode: dual-model pipeline
-  // Codex handles exploration, snippet selection, and final assembly.
-  // Claude handles outline planning and explanation crafting.
+  // Shared spinner — both PR and standard use the same checkpoint files so
+  // getCurrentStage works as the progress counter for both.
   const startStage = getCurrentStage(generationDir);
   const startPercent = Math.round((startStage / STAGES.length) * 100);
   const initialLabel = startStage < STAGES.length ? STAGES[startStage].label : 'Finalizing';
@@ -584,48 +526,58 @@ async function generateStory(query, options = {}) {
     ? null
     : ora({ text: `${initialLabel} (${startPercent}%)`, prefixText: '  ' }).start();
 
-  // Converts a stage-local checkpoint index to a global one for the progress display.
-  const makeOnCheckpoint = (offset) => (localIdx) => {
-    const globalIdx = offset + localIdx;
+  // Update spinner from a global checkpoint index.
+  const updateSpinner = (globalIdx) => {
     const pct = Math.round(((globalIdx + 1) / STAGES.length) * 100);
-    const nextLabel = globalIdx + 1 < STAGES.length ? STAGES[globalIdx + 1].label : 'Finalizing';
-    if (spinner) spinner.text = `${nextLabel} (${pct}%)`;
+    const label = globalIdx + 1 < STAGES.length ? STAGES[globalIdx + 1].label : 'Finalizing';
+    if (spinner) spinner.text = `${label} (${pct}%)`;
   };
 
   try {
-    // Stage 1: Explore (Codex)
-    if (getCurrentStage(generationDir) < 3) {
-      const { prompt, checkpoints } = buildExplorePrompt(query, generationDir);
-      await runCodex({ prompt, cwd, generationDir, checkpoints, timeoutMs: TIMEOUT_EXPLORE, verbose, onCheckpoint: makeOnCheckpoint(0) });
-    }
+    if (prData) {
+      // PR mode: monolithic Codex pipeline. local checkpoint index == global index.
+      const { prompt, checkpoints } = buildPRPrompt(query, generationDir, commitHash, generationId, repoId, prData);
+      await runCodex({ prompt, cwd, generationDir, checkpoints, timeoutMs: TIMEOUT_MS, verbose, onCheckpoint: updateSpinner });
+    } else {
+      // Standard mode: dual-model pipeline.
+      // Codex handles exploration, snippet selection, and final assembly.
+      // Claude handles outline planning and explanation crafting.
+      const makeOnCheckpoint = (offset) => (localIdx) => updateSpinner(offset + localIdx);
 
-    // Stage 2: Outline (Claude) — exploration_notes.md embedded as context
-    if (getCurrentStage(generationDir) < 4) {
-      const explorationNotes = fs.readFileSync(path.join(generationDir, 'exploration_notes.md'), 'utf-8');
-      const { prompt, checkpoints } = buildOutlinePrompt(query, generationDir, explorationNotes);
-      await runClaude({ prompt, cwd, generationDir, checkpoints, timeoutMs: TIMEOUT_OUTLINE, verbose, onCheckpoint: makeOnCheckpoint(3) });
-    }
+      // Stage 1: Explore (Codex)
+      if (getCurrentStage(generationDir) < 3) {
+        const { prompt, checkpoints } = buildExplorePrompt(query, generationDir);
+        await runCodex({ prompt, cwd, generationDir, checkpoints, timeoutMs: TIMEOUT_EXPLORE, verbose, onCheckpoint: makeOnCheckpoint(0) });
+      }
 
-    // Stage 3: Snippets (Codex) — narrative_outline.md embedded as context
-    if (getCurrentStage(generationDir) < 5) {
-      const narrativeOutline = fs.readFileSync(path.join(generationDir, 'narrative_outline.md'), 'utf-8');
-      const { prompt, checkpoints } = buildSnippetsPrompt(generationDir, narrativeOutline);
-      await runCodex({ prompt, cwd, generationDir, checkpoints, timeoutMs: TIMEOUT_SNIPPETS, verbose, onCheckpoint: makeOnCheckpoint(4) });
-    }
+      // Stage 2: Outline (Claude) — exploration_notes.md embedded as context
+      if (getCurrentStage(generationDir) < 4) {
+        const explorationNotes = fs.readFileSync(path.join(generationDir, 'exploration_notes.md'), 'utf-8');
+        const { prompt, checkpoints } = buildOutlinePrompt(query, generationDir, explorationNotes);
+        await runClaude({ prompt, cwd, generationDir, checkpoints, timeoutMs: TIMEOUT_OUTLINE, verbose, onCheckpoint: makeOnCheckpoint(3) });
+      }
 
-    // Stage 4: Explanations (Claude) — all prior checkpoint files embedded as context
-    if (getCurrentStage(generationDir) < 6) {
-      const explorationNotes = fs.readFileSync(path.join(generationDir, 'exploration_notes.md'), 'utf-8');
-      const narrativeOutline = fs.readFileSync(path.join(generationDir, 'narrative_outline.md'), 'utf-8');
-      const snippetsMapping = fs.readFileSync(path.join(generationDir, 'snippets_mapping.md'), 'utf-8');
-      const { prompt, checkpoints } = buildExplanationsPrompt(query, generationDir, explorationNotes, narrativeOutline, snippetsMapping);
-      await runClaude({ prompt, cwd, generationDir, checkpoints, timeoutMs: TIMEOUT_EXPLANATIONS, verbose, onCheckpoint: makeOnCheckpoint(5) });
-    }
+      // Stage 3: Snippets (Codex) — narrative_outline.md embedded as context
+      if (getCurrentStage(generationDir) < 5) {
+        const narrativeOutline = fs.readFileSync(path.join(generationDir, 'narrative_outline.md'), 'utf-8');
+        const { prompt, checkpoints } = buildSnippetsPrompt(generationDir, narrativeOutline);
+        await runCodex({ prompt, cwd, generationDir, checkpoints, timeoutMs: TIMEOUT_SNIPPETS, verbose, onCheckpoint: makeOnCheckpoint(4) });
+      }
 
-    // Stage 5: Assemble (Codex) — reads all checkpoint files via tools, verifies snippets
-    if (getCurrentStage(generationDir) < 7) {
-      const { prompt, checkpoints } = buildAssemblePrompt(query, generationDir, commitHash, generationId, repoId);
-      await runCodex({ prompt, cwd, generationDir, checkpoints, timeoutMs: TIMEOUT_ASSEMBLE, verbose, onCheckpoint: makeOnCheckpoint(6) });
+      // Stage 4: Explanations (Claude) — all prior checkpoint files embedded as context
+      if (getCurrentStage(generationDir) < 6) {
+        const explorationNotes = fs.readFileSync(path.join(generationDir, 'exploration_notes.md'), 'utf-8');
+        const narrativeOutline = fs.readFileSync(path.join(generationDir, 'narrative_outline.md'), 'utf-8');
+        const snippetsMapping = fs.readFileSync(path.join(generationDir, 'snippets_mapping.md'), 'utf-8');
+        const { prompt, checkpoints } = buildExplanationsPrompt(query, generationDir, explorationNotes, narrativeOutline, snippetsMapping);
+        await runClaude({ prompt, cwd, generationDir, checkpoints, timeoutMs: TIMEOUT_EXPLANATIONS, verbose, onCheckpoint: makeOnCheckpoint(5) });
+      }
+
+      // Stage 5: Assemble (Codex) — reads all checkpoint files via tools, verifies snippets
+      if (getCurrentStage(generationDir) < 7) {
+        const { prompt, checkpoints } = buildAssemblePrompt(query, generationDir, commitHash, generationId, repoId);
+        await runCodex({ prompt, cwd, generationDir, checkpoints, timeoutMs: TIMEOUT_ASSEMBLE, verbose, onCheckpoint: makeOnCheckpoint(6) });
+      }
     }
   } catch (error) {
     if (spinner) spinner.fail('Generation failed');
