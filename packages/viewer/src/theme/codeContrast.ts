@@ -10,6 +10,12 @@ type Rgba = Rgb & {
   a: number;
 };
 
+type Hsl = {
+  h: number;
+  s: number;
+  l: number;
+};
+
 type ContrastOptions = {
   backgroundColor: string;
   minContrastRatio: number;
@@ -76,14 +82,6 @@ function toHex({ r, g, b }: Rgb): string {
     .join('')}`;
 }
 
-function mixRgb(from: Rgb, to: Rgb, amount: number): Rgb {
-  return {
-    r: from.r + (to.r - from.r) * amount,
-    g: from.g + (to.g - from.g) * amount,
-    b: from.b + (to.b - from.b) * amount,
-  };
-}
-
 function compositeOver(foreground: Rgba, background: Rgb): Rgb {
   return {
     r: foreground.r * foreground.a + background.r * (1 - foreground.a),
@@ -92,9 +90,54 @@ function compositeOver(foreground: Rgba, background: Rgb): Rgb {
   };
 }
 
+function rgbToHsl({ r, g, b }: Rgb): Hsl {
+  const rn = r / 255, gn = g / 255, bn = b / 255;
+  const max = Math.max(rn, gn, bn);
+  const min = Math.min(rn, gn, bn);
+  const l = (max + min) / 2;
+
+  if (max === min) return { h: 0, s: 0, l };
+
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+
+  let h: number;
+  if (max === rn) h = (gn - bn) / d + (gn < bn ? 6 : 0);
+  else if (max === gn) h = (bn - rn) / d + 2;
+  else h = (rn - gn) / d + 4;
+  h /= 6;
+
+  return { h, s, l };
+}
+
+function hslToRgb({ h, s, l }: Hsl): Rgb {
+  if (s === 0) {
+    const v = Math.round(l * 255);
+    return { r: v, g: v, b: v };
+  }
+
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+
+  const hue2rgb = (t: number): number => {
+    if (t < 0) t += 1;
+    if (t > 1) t -= 1;
+    if (t < 1 / 6) return p + (q - p) * 6 * t;
+    if (t < 1 / 2) return q;
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+    return p;
+  };
+
+  return {
+    r: Math.round(hue2rgb(h + 1 / 3) * 255),
+    g: Math.round(hue2rgb(h) * 255),
+    b: Math.round(hue2rgb(h - 1 / 3) * 255),
+  };
+}
+
 function luminanceChannel(channel: number): number {
   const normalized = channel / 255;
-  return normalized <= 0.03928
+  return normalized <= 0.04045
     ? normalized / 12.92
     : ((normalized + 0.055) / 1.055) ** 2.4;
 }
@@ -107,17 +150,16 @@ function relativeLuminance(color: Rgb): number {
   );
 }
 
+// background must be opaque; foreground may be transparent
 export function getContrastRatio(foreground: string, background: string): number | null {
   const foregroundColor = parseColor(foreground);
   const backgroundColor = parseColor(background);
   if (!foregroundColor || !backgroundColor) return null;
 
-  const opaqueWhite = { r: 255, g: 255, b: 255 };
-  const backgroundRgb = compositeOver(backgroundColor, opaqueWhite);
-  const foregroundRgb = compositeOver(foregroundColor, backgroundRgb);
+  const foregroundRgb = compositeOver(foregroundColor, backgroundColor);
 
   const foregroundLuminance = relativeLuminance(foregroundRgb);
-  const backgroundLuminance = relativeLuminance(backgroundRgb);
+  const backgroundLuminance = relativeLuminance(backgroundColor);
   const lighter = Math.max(foregroundLuminance, backgroundLuminance);
   const darker = Math.min(foregroundLuminance, backgroundLuminance);
   return (lighter + 0.05) / (darker + 0.05);
@@ -127,35 +169,37 @@ export function amplifyColorContrast(
   foreground: string,
   { backgroundColor, minContrastRatio }: ContrastOptions,
 ): string {
-  const foregroundRgb = parseColor(foreground);
+  const foregroundRgba = parseColor(foreground);
   const backgroundRgb = parseColor(backgroundColor);
-  if (!foregroundRgb || !backgroundRgb) return foreground;
+  if (!foregroundRgba || !backgroundRgb) return foreground;
 
   const currentContrast = getContrastRatio(foreground, backgroundColor);
   if (currentContrast !== null && currentContrast >= minContrastRatio) return foreground;
 
-  const black = { r: 0, g: 0, b: 0 };
-  const white = { r: 255, g: 255, b: 255 };
-  const blackContrast = getContrastRatio(toHex(black), backgroundColor) ?? 0;
-  const whiteContrast = getContrastRatio(toHex(white), backgroundColor) ?? 0;
-  const target = blackContrast >= whiteContrast ? black : white;
+  const composited = compositeOver(foregroundRgba, backgroundRgb);
+  const hsl = rgbToHsl(composited);
+  const backgroundLuminance = relativeLuminance(backgroundRgb);
+  const lTarget = backgroundLuminance > 0.5 ? 0 : 1;
+  const lAdjusted = (t: number) => hsl.l + (lTarget - hsl.l) * t;
 
   let low = 0;
   let high = 1;
-  for (let i = 0; i < 16; i += 1) {
-    const amount = (low + high) / 2;
-    const mixed = toHex(mixRgb(foregroundRgb, target, amount));
-    const mixedContrast = getContrastRatio(mixed, backgroundColor) ?? 0;
-    if (mixedContrast >= minContrastRatio) {
-      high = amount;
+  for (let i = 0; i < 12; i += 1) {
+    const t = (low + high) / 2;
+    const candidate = toHex(hslToRgb({ ...hsl, l: lAdjusted(t) }));
+    const ratio = getContrastRatio(candidate, backgroundColor) ?? 0;
+    if (ratio >= minContrastRatio) {
+      high = t;
     } else {
-      low = amount;
+      low = t;
     }
   }
 
-  const adjusted = toHex(mixRgb(foregroundRgb, target, high));
+  const adjusted = toHex(hslToRgb({ ...hsl, l: lAdjusted(high) }));
   const adjustedContrast = getContrastRatio(adjusted, backgroundColor) ?? 0;
-  return adjustedContrast >= minContrastRatio ? adjusted : toHex(target);
+  return adjustedContrast >= minContrastRatio
+    ? adjusted
+    : backgroundLuminance > 0.5 ? '#000000' : '#ffffff';
 }
 
 export function createContrastAmplifiedTheme(
