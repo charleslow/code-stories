@@ -7,7 +7,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { v4 as uuidv4 } from 'uuid';
-import { buildPrompt } from './prompt.js';
+import { buildExplorePrompt, buildOutlinePrompt, buildSnippetsPrompt, buildExplanationsPrompt, buildAssemblePrompt } from './prompt.js';
 import { buildPRPrompt } from './prompt-pr.js';
 import { fetchPRData } from './pr.js';
 import { detectPlatform, resolveCli, parseRepoId, getCloneUrl, checkoutMR } from './hosting.js';
@@ -113,8 +113,15 @@ function cloneRepoForPR(repo, prNumber, host, cli, spinner) {
   return { tempDir, repoId };
 }
 
-// Maximum time (ms) the Codex subprocess may run before being killed.
+// Timeout for PR mode (single monolithic Codex invocation).
 const TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+
+// Per-stage timeouts for the dual-model pipeline.
+const TIMEOUT_EXPLORE      = 20 * 60 * 1000;
+const TIMEOUT_OUTLINE      =  5 * 60 * 1000;
+const TIMEOUT_SNIPPETS     = 15 * 60 * 1000;
+const TIMEOUT_EXPLANATIONS = 20 * 60 * 1000;
+const TIMEOUT_ASSEMBLE     = 10 * 60 * 1000;
 
 // Flat stage definitions for progress tracking (used by getCurrentStage and listIncompleteGenerations)
 const STAGES = [
@@ -223,6 +230,99 @@ function runCodex({ prompt, cwd, generationDir, checkpoints, timeoutMs, verbose,
       clearInterval(progressInterval);
 
       // Verify all checkpoints for this stage are complete
+      const allComplete = checkpoints.every(cp => {
+        const filePath = path.join(generationDir, cp.file);
+        if (!fs.existsSync(filePath)) return false;
+        if (cp.checkpoint) {
+          const content = fs.readFileSync(filePath, 'utf-8');
+          return content.includes(cp.checkpoint);
+        }
+        return true;
+      });
+
+      if (allComplete) {
+        resolve();
+      } else {
+        let msg = `Stage did not produce expected outputs (exit code: ${code})`;
+        if (stderr) msg += `\nstderr: ${stderr.slice(0, 500)}`;
+        if (stdout) msg += `\nstdout: ${stdout.slice(0, 500)}`;
+        reject(new Error(msg));
+      }
+    });
+  });
+}
+
+// Run Claude CLI subprocess with the given prompt.
+// Same checkpoint polling contract as runCodex.
+// cwd is the repo directory — Claude's working directory, giving it source file access.
+// generationDir is always added via --add-dir for checkpoint + scratch note writes.
+function runClaude({ prompt, cwd, generationDir, checkpoints, timeoutMs, verbose, onCheckpoint }) {
+  return new Promise((resolve, reject) => {
+    const args = [
+      '--print',
+      '--dangerously-skip-permissions',
+      '--add-dir', generationDir,
+    ];
+    const cleanEnv = { ...process.env };
+    delete cleanEnv.CLAUDECODE;
+    delete cleanEnv.CLAUDE_CODE_ENTRYPOINT;
+    delete cleanEnv.CLAUDE_CODE_SESSION;
+
+    const claude = spawn('claude', args, { cwd, env: cleanEnv });
+
+    claude.stdin.on('error', (err) => {
+      if (err.code !== 'EPIPE') throw err;
+    });
+    let stdout = '';
+    claude.stdout.on('data', (data) => {
+      const chunk = data.toString();
+      stdout += chunk;
+      if (verbose) process.stdout.write(chunk);
+    });
+    claude.stdin.write(prompt);
+    claude.stdin.end();
+
+    let stderr = '';
+    claude.stderr.on('data', (data) => {
+      const chunk = data.toString();
+      stderr += chunk;
+      if (verbose) process.stderr.write(chunk);
+    });
+
+    let lastCompleted = 0;
+    const progressInterval = setInterval(() => {
+      let completed = 0;
+      for (const cp of checkpoints) {
+        const filePath = path.join(generationDir, cp.file);
+        if (!fs.existsSync(filePath)) break;
+        if (cp.checkpoint) {
+          const content = fs.readFileSync(filePath, 'utf-8');
+          if (!content.includes(cp.checkpoint)) break;
+        }
+        completed++;
+      }
+      if (completed > lastCompleted) {
+        lastCompleted = completed;
+        if (onCheckpoint) onCheckpoint(completed - 1);
+      }
+    }, 1000);
+
+    const timer = setTimeout(() => {
+      clearInterval(progressInterval);
+      claude.kill('SIGTERM');
+      reject(new Error(`Stage timed out after ${timeoutMs / 60_000} minutes`));
+    }, timeoutMs);
+
+    claude.on('error', (error) => {
+      clearTimeout(timer);
+      clearInterval(progressInterval);
+      reject(new Error(`Failed to spawn Claude CLI: ${error.message}`));
+    });
+
+    claude.on('close', (code) => {
+      clearTimeout(timer);
+      clearInterval(progressInterval);
+
       const allComplete = checkpoints.every(cp => {
         const filePath = path.join(generationDir, cp.file);
         if (!fs.existsSync(filePath)) return false;
@@ -405,11 +505,6 @@ async function generateStory(query, options = {}) {
     fs.writeFileSync(path.join(generationDir, 'metadata.json'), JSON.stringify(meta, null, 2));
   }
 
-  // Build single prompt with all stages
-  const { prompt, checkpoints } = prData
-    ? buildPRPrompt(query, generationDir, commitHash, generationId, repoId, prData)
-    : buildPrompt(query, generationDir, commitHash, generationId, repoId);
-
   if (!resume) {
     console.log('\n  Code Stories Generator\n');
     if (repoId) {
@@ -420,42 +515,118 @@ async function generateStory(query, options = {}) {
     console.log('');
   }
 
-  // Count already-completed checkpoints (for resume progress offset)
-  let completedCheckpoints = 0;
-  for (const cp of checkpoints) {
-    const filePath = path.join(generationDir, cp.file);
-    if (!fs.existsSync(filePath)) break;
-    if (cp.checkpoint) {
-      const content = fs.readFileSync(filePath, 'utf-8');
-      if (!content.includes(cp.checkpoint)) break;
+  const genId = path.basename(generationDir);
+
+  // PR mode: monolithic Codex pipeline (unchanged)
+  if (prData) {
+    const { prompt, checkpoints } = buildPRPrompt(query, generationDir, commitHash, generationId, repoId, prData);
+
+    let completedCheckpoints = 0;
+    for (const cp of checkpoints) {
+      const filePath = path.join(generationDir, cp.file);
+      if (!fs.existsSync(filePath)) break;
+      if (cp.checkpoint) {
+        const content = fs.readFileSync(filePath, 'utf-8');
+        if (!content.includes(cp.checkpoint)) break;
+      }
+      completedCheckpoints++;
     }
-    completedCheckpoints++;
+
+    const startPercent = Math.round((completedCheckpoints / checkpoints.length) * 100);
+    const initialLabel = completedCheckpoints < STAGES.length ? STAGES[completedCheckpoints].label : 'Finalizing';
+    const spinner = verbose
+      ? null
+      : ora({ text: `${initialLabel} (${startPercent}%)`, prefixText: '  ' }).start();
+
+    try {
+      await runCodex({
+        prompt,
+        cwd,
+        generationDir,
+        checkpoints,
+        timeoutMs: TIMEOUT_MS,
+        verbose,
+        onCheckpoint: (checkpointIdx) => {
+          const pct = Math.round(((checkpointIdx + 1) / checkpoints.length) * 100);
+          const nextIdx = checkpointIdx + 1;
+          const label = nextIdx < STAGES.length ? STAGES[nextIdx].label : 'Finalizing';
+          if (spinner) spinner.text = `${label} (${pct}%)`;
+        },
+      });
+    } catch (error) {
+      if (spinner) spinner.fail('Generation failed');
+      else console.error('  Generation failed');
+      console.log(`\n  Check intermediate files in: ${generationDir}`);
+      console.log(`  To resume: code-stories --resume ${genId}\n`);
+      throw error;
+    }
+
+    try {
+      const { story, finalPath } = finalizeStory(generationDir);
+      if (spinner) spinner.succeed(`Story generated: ${story.title}`);
+      else console.log(`  Done: Story generated: ${story.title}`);
+      console.log(`\n  Saved to: ${finalPath}\n`);
+      return story;
+    } catch (error) {
+      if (spinner) spinner.fail(`Error processing story: ${error.message}`);
+      else console.error(`  Error processing story: ${error.message}`);
+      throw error;
+    }
   }
 
-  const startPercent = Math.round((completedCheckpoints / checkpoints.length) * 100);
-  const initialLabel = completedCheckpoints < STAGES.length ? STAGES[completedCheckpoints].label : 'Finalizing';
+  // Standard mode: dual-model pipeline
+  // Codex handles exploration, snippet selection, and final assembly.
+  // Claude handles outline planning and explanation crafting.
+  const startStage = getCurrentStage(generationDir);
+  const startPercent = Math.round((startStage / STAGES.length) * 100);
+  const initialLabel = startStage < STAGES.length ? STAGES[startStage].label : 'Finalizing';
   const spinner = verbose
     ? null
     : ora({ text: `${initialLabel} (${startPercent}%)`, prefixText: '  ' }).start();
 
-  const genId = path.basename(generationDir);
+  // Converts a stage-local checkpoint index to a global one for the progress display.
+  const makeOnCheckpoint = (offset) => (localIdx) => {
+    const globalIdx = offset + localIdx;
+    const pct = Math.round(((globalIdx + 1) / STAGES.length) * 100);
+    const nextLabel = globalIdx + 1 < STAGES.length ? STAGES[globalIdx + 1].label : 'Finalizing';
+    if (spinner) spinner.text = `${nextLabel} (${pct}%)`;
+  };
 
-  // Run the full pipeline as a single Codex invocation
   try {
-    await runCodex({
-      prompt,
-      cwd,
-      generationDir,
-      checkpoints,
-      timeoutMs: TIMEOUT_MS,
-      verbose,
-      onCheckpoint: (checkpointIdx) => {
-        const pct = Math.round(((checkpointIdx + 1) / checkpoints.length) * 100);
-        const nextIdx = checkpointIdx + 1;
-        const label = nextIdx < STAGES.length ? STAGES[nextIdx].label : 'Finalizing';
-        if (spinner) spinner.text = `${label} (${pct}%)`;
-      },
-    });
+    // Stage 1: Explore (Codex)
+    if (getCurrentStage(generationDir) < 3) {
+      const { prompt, checkpoints } = buildExplorePrompt(query, generationDir);
+      await runCodex({ prompt, cwd, generationDir, checkpoints, timeoutMs: TIMEOUT_EXPLORE, verbose, onCheckpoint: makeOnCheckpoint(0) });
+    }
+
+    // Stage 2: Outline (Claude) — exploration_notes.md embedded as context
+    if (getCurrentStage(generationDir) < 4) {
+      const explorationNotes = fs.readFileSync(path.join(generationDir, 'exploration_notes.md'), 'utf-8');
+      const { prompt, checkpoints } = buildOutlinePrompt(query, generationDir, explorationNotes);
+      await runClaude({ prompt, cwd, generationDir, checkpoints, timeoutMs: TIMEOUT_OUTLINE, verbose, onCheckpoint: makeOnCheckpoint(3) });
+    }
+
+    // Stage 3: Snippets (Codex) — narrative_outline.md embedded as context
+    if (getCurrentStage(generationDir) < 5) {
+      const narrativeOutline = fs.readFileSync(path.join(generationDir, 'narrative_outline.md'), 'utf-8');
+      const { prompt, checkpoints } = buildSnippetsPrompt(generationDir, narrativeOutline);
+      await runCodex({ prompt, cwd, generationDir, checkpoints, timeoutMs: TIMEOUT_SNIPPETS, verbose, onCheckpoint: makeOnCheckpoint(4) });
+    }
+
+    // Stage 4: Explanations (Claude) — all prior checkpoint files embedded as context
+    if (getCurrentStage(generationDir) < 6) {
+      const explorationNotes = fs.readFileSync(path.join(generationDir, 'exploration_notes.md'), 'utf-8');
+      const narrativeOutline = fs.readFileSync(path.join(generationDir, 'narrative_outline.md'), 'utf-8');
+      const snippetsMapping = fs.readFileSync(path.join(generationDir, 'snippets_mapping.md'), 'utf-8');
+      const { prompt, checkpoints } = buildExplanationsPrompt(query, generationDir, explorationNotes, narrativeOutline, snippetsMapping);
+      await runClaude({ prompt, cwd, generationDir, checkpoints, timeoutMs: TIMEOUT_EXPLANATIONS, verbose, onCheckpoint: makeOnCheckpoint(5) });
+    }
+
+    // Stage 5: Assemble (Codex) — reads all checkpoint files via tools, verifies snippets
+    if (getCurrentStage(generationDir) < 7) {
+      const { prompt, checkpoints } = buildAssemblePrompt(query, generationDir, commitHash, generationId, repoId);
+      await runCodex({ prompt, cwd, generationDir, checkpoints, timeoutMs: TIMEOUT_ASSEMBLE, verbose, onCheckpoint: makeOnCheckpoint(6) });
+    }
   } catch (error) {
     if (spinner) spinner.fail('Generation failed');
     else console.error('  Generation failed');
