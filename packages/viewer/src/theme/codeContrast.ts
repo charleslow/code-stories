@@ -233,7 +233,7 @@ export function createContrastAmplifiedTheme(
       // Skip background tint for grey-ish colors (no meaningful hue to
       // preserve) and punctuation tokens (noisy on single characters).
       const isColourful = typeof originalColor === 'string' && colorSaturation(originalColor) >= 0.15;
-      const isPunctuation = themeStyle.types.every((t) => t === 'punctuation');
+      const isPunctuation = themeStyle.types.length > 0 && themeStyle.types.every((t) => t === 'punctuation');
       return {
         ...themeStyle,
         style: {
