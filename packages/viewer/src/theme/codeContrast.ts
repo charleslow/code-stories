@@ -76,6 +76,12 @@ function parseColor(color: string): Rgba | null {
   return parseRgbColor(color);
 }
 
+function withOpacity(color: string, alpha: number): string | null {
+  const parsed = parseColor(color);
+  if (!parsed) return null;
+  return `rgba(${Math.round(parsed.r)}, ${Math.round(parsed.g)}, ${Math.round(parsed.b)}, ${alpha})`;
+}
+
 function toHex({ r, g, b }: Rgb): string {
   return `#${[r, g, b]
     .map((channel) => clampChannel(channel).toString(16).padStart(2, '0'))
@@ -222,11 +228,10 @@ export function createContrastAmplifiedTheme(
         style: {
           ...themeStyle.style,
           color: amplifiedColor,
-          // Underline carries the original (unamplified) color so the hue
-          // remains visible while the text itself stays legible.
+          // Faint background tint carries the original (unamplified) hue so
+          // color information remains visible without cluttering the text.
           ...(typeof originalColor === 'string' && {
-            textDecoration: 'underline',
-            textDecorationColor: originalColor,
+            backgroundColor: withOpacity(originalColor, 0.15) ?? undefined,
           }),
         },
       };
