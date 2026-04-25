@@ -56,4 +56,50 @@ describe('code contrast amplification', () => {
       expect(getContrastRatio(color, EINK_BACKGROUND)).toBeGreaterThanOrEqual(EINK_MIN_CONTRAST);
     }
   });
+
+  describe('createContrastAmplifiedTheme background tint rules', () => {
+    const opts = { backgroundColor: EINK_BACKGROUND, minContrastRatio: EINK_MIN_CONTRAST };
+
+    function makeTheme(styles: Array<{ types: string[]; color: string }>) {
+      return createContrastAmplifiedTheme(
+        {
+          plain: { color: '#24292f', backgroundColor: '#ffffff' },
+          styles: styles.map(({ types, color }) => ({ types, style: { color } })),
+        },
+        opts,
+      );
+    }
+
+    it('applies background tint to colorful non-punctuation tokens', () => {
+      // #cf222e is a vivid red (keyword color in github theme)
+      const theme = makeTheme([{ types: ['keyword'], color: '#cf222e' }]);
+      expect(theme.styles[0].style.backgroundColor).toBeDefined();
+    });
+
+    it('suppresses background tint for grey-ish comment colors', () => {
+      // #6e7781 is the github theme comment color — low saturation grey
+      const theme = makeTheme([{ types: ['comment'], color: '#6e7781' }]);
+      expect(theme.styles[0].style.backgroundColor).toBeUndefined();
+    });
+
+    it('suppresses background tint for punctuation tokens', () => {
+      const theme = makeTheme([{ types: ['punctuation'], color: '#cf222e' }]);
+      expect(theme.styles[0].style.backgroundColor).toBeUndefined();
+    });
+
+    it('applies background tint when types is empty (empty types are not treated as punctuation)', () => {
+      const theme = makeTheme([{ types: [], color: '#cf222e' }]);
+      expect(theme.styles[0].style.backgroundColor).toBeDefined();
+    });
+
+    it('suppresses background tint when all types are punctuation, even in a mixed list', () => {
+      const theme = makeTheme([{ types: ['punctuation', 'punctuation'], color: '#cf222e' }]);
+      expect(theme.styles[0].style.backgroundColor).toBeUndefined();
+    });
+
+    it('applies background tint when types contains non-punctuation alongside punctuation', () => {
+      const theme = makeTheme([{ types: ['operator', 'punctuation'], color: '#cf222e' }]);
+      expect(theme.styles[0].style.backgroundColor).toBeDefined();
+    });
+  });
 });

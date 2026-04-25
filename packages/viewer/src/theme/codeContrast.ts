@@ -76,6 +76,13 @@ function parseColor(color: string): Rgba | null {
   return parseRgbColor(color);
 }
 
+function colorSaturation(color: string): number {
+  const parsed = parseColor(color);
+  if (!parsed) return 0;
+  const composited = compositeOver(parsed, { r: 255, g: 255, b: 255 });
+  return rgbToHsl(composited).s;
+}
+
 function withOpacity(color: string, alpha: number): string | null {
   const parsed = parseColor(color);
   if (!parsed) return null;
@@ -223,14 +230,16 @@ export function createContrastAmplifiedTheme(
       const amplifiedColor = typeof originalColor === 'string'
         ? amplifyColorContrast(originalColor, options)
         : originalColor;
+      // Skip background tint for grey-ish colors (no meaningful hue to
+      // preserve) and punctuation tokens (noisy on single characters).
+      const isColourful = typeof originalColor === 'string' && colorSaturation(originalColor) >= 0.15;
+      const isPunctuation = themeStyle.types.length > 0 && themeStyle.types.every((t) => t === 'punctuation');
       return {
         ...themeStyle,
         style: {
           ...themeStyle.style,
           color: amplifiedColor,
-          // Faint background tint carries the original (unamplified) hue so
-          // color information remains visible without cluttering the text.
-          ...(typeof originalColor === 'string' && {
+          ...(isColourful && !isPunctuation && {
             backgroundColor: withOpacity(originalColor, 0.15) ?? undefined,
           }),
         },
