@@ -202,6 +202,27 @@ export function amplifyColorContrast(
     : backgroundLuminance > 0.5 ? '#000000' : '#ffffff';
 }
 
+const UNDERLINED_TOKEN_TYPES = new Set([
+  'keyword',
+  'string',
+  'char',
+  'function',
+  'class-name',
+]);
+
+export function createUnderlinedTheme(baseTheme: PrismTheme): PrismTheme {
+  return {
+    ...baseTheme,
+    styles: baseTheme.styles.map((themeStyle) => {
+      if (!themeStyle.types.some((t) => UNDERLINED_TOKEN_TYPES.has(t))) return themeStyle;
+      return {
+        ...themeStyle,
+        style: { ...themeStyle.style, textDecoration: 'underline' },
+      };
+    }),
+  };
+}
+
 export function createContrastAmplifiedTheme(
   baseTheme: PrismTheme,
   options: ContrastOptions,
