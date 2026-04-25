@@ -1114,6 +1114,10 @@ body {
     display: none;
   }
 
+  .contrast-toggle {
+    display: none;
+  }
+
   .explanation-panel {
     padding: 1.5rem 1rem;
   }
