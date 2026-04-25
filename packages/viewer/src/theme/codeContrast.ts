@@ -202,27 +202,6 @@ export function amplifyColorContrast(
     : backgroundLuminance > 0.5 ? '#000000' : '#ffffff';
 }
 
-const UNDERLINED_TOKEN_TYPES = new Set([
-  'keyword',
-  'string',
-  'char',
-  'function',
-  'class-name',
-]);
-
-export function createUnderlinedTheme(baseTheme: PrismTheme): PrismTheme {
-  return {
-    ...baseTheme,
-    styles: baseTheme.styles.map((themeStyle) => {
-      if (!themeStyle.types.some((t) => UNDERLINED_TOKEN_TYPES.has(t))) return themeStyle;
-      return {
-        ...themeStyle,
-        style: { ...themeStyle.style, textDecoration: 'underline' },
-      };
-    }),
-  };
-}
-
 export function createContrastAmplifiedTheme(
   baseTheme: PrismTheme,
   options: ContrastOptions,
@@ -233,14 +212,24 @@ export function createContrastAmplifiedTheme(
       color: amplifyColorContrast(baseTheme.plain.color ?? '#24292f', options),
       backgroundColor: options.backgroundColor,
     },
-    styles: baseTheme.styles.map((themeStyle) => ({
-      ...themeStyle,
-      style: {
-        ...themeStyle.style,
-        color: typeof themeStyle.style.color === 'string'
-          ? amplifyColorContrast(themeStyle.style.color, options)
-          : themeStyle.style.color,
-      },
-    })),
+    styles: baseTheme.styles.map((themeStyle) => {
+      const originalColor = themeStyle.style.color;
+      const amplifiedColor = typeof originalColor === 'string'
+        ? amplifyColorContrast(originalColor, options)
+        : originalColor;
+      return {
+        ...themeStyle,
+        style: {
+          ...themeStyle.style,
+          color: amplifiedColor,
+          // Underline carries the original (unamplified) color so the hue
+          // remains visible while the text itself stays legible.
+          ...(typeof originalColor === 'string' && {
+            textDecoration: 'underline',
+            textDecorationColor: originalColor,
+          }),
+        },
+      };
+    }),
   };
 }

@@ -1,6 +1,6 @@
 import { Highlight, themes, type PrismTheme } from 'prism-react-renderer';
 import type { CodeSnippet, PRMetadata, DiffLine } from '../types';
-import { createUnderlinedTheme } from '../theme/codeContrast';
+import { createContrastAmplifiedTheme } from '../theme/codeContrast';
 import type { DisplayMode } from './App';
 
 // Register Java, Ruby, and Bash grammars missing from prism-react-renderer's
@@ -19,7 +19,10 @@ const EXT_TO_LANGUAGE: Record<string, string> = {
   '.json': 'json', '.yaml': 'yaml', '.yml': 'yaml', '.md': 'markdown', '.sql': 'sql',
 };
 
-const EINK_CODE_THEME: PrismTheme = createUnderlinedTheme(themes.github);
+const EINK_CODE_THEME: PrismTheme = createContrastAmplifiedTheme(themes.github, {
+  backgroundColor: '#ffffff',
+  minContrastRatio: 7,
+});
 
 function getLanguageFromPath(filePath: string): string {
   const dot = filePath.lastIndexOf('.');
