@@ -41,7 +41,6 @@ export function App() {
   const [recentStories, setRecentStories] = useState<RecentStory[]>(getRecentStories);
   const [chatAvailable, setChatAvailable] = useState(false);
   const [displayMode, setDisplayMode] = useState<DisplayMode>(getInitialDisplayMode);
-  const [contrastAmplified, setContrastAmplified] = useState(true);
 
   useEffect(() => {
     document.documentElement.dataset.displayMode = displayMode;
@@ -141,8 +140,6 @@ export function App() {
             chatAvailable={chatAvailable}
             displayMode={displayMode}
             onDisplayModeChange={setDisplayMode}
-            contrastAmplified={contrastAmplified}
-            onContrastAmplifiedChange={setContrastAmplified}
           />
         </ErrorBoundary>
       )}

@@ -17,7 +17,6 @@ interface ChapterDisplayProps {
   chatAvailable?: boolean;
   storyId?: string;
   displayMode: DisplayMode;
-  contrastAmplified: boolean;
 }
 
 const MIN_PANEL_PERCENT = 30;
@@ -38,7 +37,7 @@ function useIsMobile() {
   );
 }
 
-export function ChapterDisplay({ chapter, currentIndex, totalChapters, onPrev, onNext, storyQuery, storyRepo, storyPR, chatAvailable, storyId, displayMode, contrastAmplified }: ChapterDisplayProps) {
+export function ChapterDisplay({ chapter, currentIndex, totalChapters, onPrev, onNext, storyQuery, storyRepo, storyPR, chatAvailable, storyId, displayMode }: ChapterDisplayProps) {
   const isFirst = currentIndex === 0;
   const isLast = currentIndex === totalChapters - 1;
   const isMobile = useIsMobile();
@@ -120,7 +119,6 @@ export function ChapterDisplay({ chapter, currentIndex, totalChapters, onPrev, o
             storyRepo={storyRepo}
             storyPR={storyPR}
             displayMode={displayMode}
-            contrastAmplified={contrastAmplified}
           />
         )}
         {!isMobile && (

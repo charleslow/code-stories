@@ -212,14 +212,24 @@ export function createContrastAmplifiedTheme(
       color: amplifyColorContrast(baseTheme.plain.color ?? '#24292f', options),
       backgroundColor: options.backgroundColor,
     },
-    styles: baseTheme.styles.map((themeStyle) => ({
-      ...themeStyle,
-      style: {
-        ...themeStyle.style,
-        color: typeof themeStyle.style.color === 'string'
-          ? amplifyColorContrast(themeStyle.style.color, options)
-          : themeStyle.style.color,
-      },
-    })),
+    styles: baseTheme.styles.map((themeStyle) => {
+      const originalColor = themeStyle.style.color;
+      const amplifiedColor = typeof originalColor === 'string'
+        ? amplifyColorContrast(originalColor, options)
+        : originalColor;
+      return {
+        ...themeStyle,
+        style: {
+          ...themeStyle.style,
+          color: amplifiedColor,
+          // Underline carries the original (unamplified) color so the hue
+          // remains visible while the text itself stays legible.
+          ...(typeof originalColor === 'string' && {
+            textDecoration: 'underline',
+            textDecorationColor: originalColor,
+          }),
+        },
+      };
+    }),
   };
 }
