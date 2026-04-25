@@ -10,11 +10,9 @@ interface StoryViewerProps {
   chatAvailable?: boolean;
   displayMode: DisplayMode;
   onDisplayModeChange: (mode: DisplayMode) => void;
-  contrastAmplified: boolean;
-  onContrastAmplifiedChange: (value: boolean) => void;
 }
 
-export function StoryViewer({ story, onBack, chatAvailable, displayMode, onDisplayModeChange, contrastAmplified, onContrastAmplifiedChange }: StoryViewerProps) {
+export function StoryViewer({ story, onBack, chatAvailable, displayMode, onDisplayModeChange }: StoryViewerProps) {
   const [currentChapterIndex, setCurrentChapterIndex] = useState(0);
   const nextDisplayMode = displayMode === 'eink' ? 'normal' : 'eink';
 
@@ -69,14 +67,6 @@ export function StoryViewer({ story, onBack, chatAvailable, displayMode, onDispl
         >
           {displayMode === 'eink' ? 'Normal' : 'E-ink'}
         </button>
-        <button
-          className="display-mode-toggle contrast-toggle"
-          onClick={() => onContrastAmplifiedChange(!contrastAmplified)}
-          aria-pressed={contrastAmplified}
-          title={contrastAmplified ? 'Disable contrast amplification' : 'Enable contrast amplification'}
-        >
-          {contrastAmplified ? 'Contrast: On' : 'Contrast: Off'}
-        </button>
         <h1>{story.title}</h1>
         {story.pr && (
           <a className="pr-badge-link" href={story.pr.url} target="_blank" rel="noopener noreferrer">
@@ -106,7 +96,6 @@ export function StoryViewer({ story, onBack, chatAvailable, displayMode, onDispl
             chatAvailable={chatAvailable}
             storyId={story.id}
             displayMode={displayMode}
-            contrastAmplified={contrastAmplified}
           />
         </main>
       </div>

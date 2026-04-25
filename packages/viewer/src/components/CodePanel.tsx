@@ -69,10 +69,9 @@ interface CodePanelProps {
   storyRepo?: string | null;
   storyPR?: PRMetadata;
   displayMode: DisplayMode;
-  contrastAmplified: boolean;
 }
 
-export function CodePanel({ snippets, style, storyQuery, storyRepo, storyPR, displayMode, contrastAmplified }: CodePanelProps) {
+export function CodePanel({ snippets, style, storyQuery, storyRepo, storyPR, displayMode }: CodePanelProps) {
   if (snippets.length === 0) {
     const hasMetadata = storyQuery || storyRepo || storyPR;
     return (
@@ -140,7 +139,7 @@ export function CodePanel({ snippets, style, storyQuery, storyRepo, storyPR, dis
               <DiffSnippetView lines={snippet.lines!} />
             ) : (
               <Highlight
-                theme={displayMode === 'eink' && contrastAmplified ? EINK_CODE_THEME : displayMode === 'eink' ? themes.github : themes.oneDark}
+                theme={displayMode === 'eink' ? EINK_CODE_THEME : themes.oneDark}
                 code={snippet.content}
                 language={getLanguageFromPath(snippet.filePath)}
               >
