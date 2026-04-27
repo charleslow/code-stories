@@ -22,6 +22,8 @@ import {
 import { fetchPRData } from './pr.js';
 import { detectPlatform, resolveCli, parseRepoId, getCloneUrl, checkoutMR } from './hosting.js';
 
+const packageJson = JSON.parse(fs.readFileSync(new URL('./package.json', import.meta.url), 'utf-8'));
+
 // Configuration (resolved relative to cwd)
 const STORIES_DIR = path.resolve('./stories');
 const TMP_DIR = path.join(STORIES_DIR, '.tmp');
@@ -449,7 +451,7 @@ process.on('SIGTERM', () => cleanupAndExit(143));
 program
   .name('code-stories')
   .description('Generate narrative-driven code stories using Codex')
-  .version('0.1.0')
+  .version(packageJson.version)
   .argument('[query]', 'Question about the codebase to generate a story for')
   .option('-r, --repo <repo>', 'GitHub or GitLab repository (user/repo or full URL)')
   .option('--pr <number>', 'PR/MR number to review', parseInt)
