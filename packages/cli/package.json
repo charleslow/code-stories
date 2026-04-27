@@ -1,6 +1,6 @@
 {
   "name": "code-stories",
-  "version": "0.1.5",
+  "version": "0.1.8",
   "description": "Generate narrative-driven code stories using Codex",
   "type": "module",
   "bin": {
