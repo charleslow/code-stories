@@ -83,11 +83,14 @@ models:
   # Claude stages
   outline: claude-sonnet-4-5        # Stage 2: chapter outline planning
   explanations: claude-opus-4-7     # Stage 4: prose explanations
+  chat: claude-sonnet-4-6           # Viewer chat replies (default: claude-sonnet-4-6)
 ```
 
-Any omitted key uses that CLI's default model. If a model name is invalid or
-unavailable, the stage will fail immediately with a clear error that includes the
-model name and the CLI's own diagnostic output.
+Any omitted key uses that CLI's default model. `models.chat` is used by the local
+viewer chat server, and can target either provider: values beginning with `claude`
+run via Claude CLI; all other values run via Codex CLI (for example `gpt-5.4`).
+If a model name is invalid or unavailable, the stage will fail immediately with a
+clear error that includes the model name and the CLI's own diagnostic output.
 
 ## How It Works
 

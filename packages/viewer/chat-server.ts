@@ -6,13 +6,72 @@ import type { ServerResponse } from 'http'
 import { isSafeId, readBody, buildChatPrompt, withFileLock } from './chat-utils'
 
 const storiesDir = path.resolve(__dirname, '../../stories')
+const configPath = path.resolve(__dirname, '../../config.yaml')
+const DEFAULT_CHAT_MODEL = 'claude-sonnet-4-6'
 
 function jsonResponse(res: ServerResponse, data: unknown, status = 200) {
   res.writeHead(status, { 'Content-Type': 'application/json' })
   res.end(JSON.stringify(data))
 }
 
-export function runCodex(prompt: string): Promise<string> {
+type ChatRunner = 'codex' | 'claude'
+
+type ChatConfig = {
+  model: string
+  runner: ChatRunner
+}
+
+function getChatRunner(model: string): ChatRunner {
+  return model.toLowerCase().startsWith('claude') ? 'claude' : 'codex'
+}
+
+function readChatModelFromYaml(raw: string): string | null {
+  const lines = raw.split(/\r?\n/)
+  let inModelsBlock = false
+  let modelsIndent = 0
+
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('#')) continue
+
+    const indent = line.match(/^\s*/)?.[0].length ?? 0
+
+    if (!inModelsBlock) {
+      if (/^models\s*:\s*$/.test(trimmed)) {
+        inModelsBlock = true
+        modelsIndent = indent
+      }
+      continue
+    }
+
+    if (indent <= modelsIndent) break
+
+    const chatMatch = line.match(/^\s*chat\s*:\s*(.+)\s*$/)
+    if (!chatMatch) continue
+
+    const value = chatMatch[1].replace(/\s+#.*$/, '').trim()
+    const unquoted = value.replace(/^['"]|['"]$/g, '').trim()
+    if (unquoted) return unquoted
+  }
+
+  return null
+}
+
+async function loadChatConfig(): Promise<ChatConfig> {
+  try {
+    const raw = await fsPromises.readFile(configPath, 'utf-8')
+    const chatModel = readChatModelFromYaml(raw)
+    if (chatModel) {
+      return { model: chatModel, runner: getChatRunner(chatModel) }
+    }
+  } catch {
+    // Missing or malformed config falls back to defaults.
+  }
+
+  return { model: DEFAULT_CHAT_MODEL, runner: 'claude' }
+}
+
+export function runChatModel(prompt: string, model: string, runner: ChatRunner): Promise<string> {
   return new Promise((resolve, reject) => {
     let settled = false
     const done = (err: Error | null, result?: string) => {
@@ -23,11 +82,14 @@ export function runCodex(prompt: string): Promise<string> {
       else resolve(result!)
     }
 
-    const proc = spawn('codex', ['exec', '--full-auto', '-'], {
+    const args = runner === 'claude'
+      ? ['--print', '--output-format', 'text', '--model', model]
+      : ['exec', '--full-auto', '--model', model, '-']
+    const proc = spawn(runner, args, {
       stdio: ['pipe', 'pipe', 'pipe'],
       cwd: storiesDir,
     })
-    console.log('[chat] codex process pid:', proc.pid)
+    console.log(`[chat] ${runner} process pid:`, proc.pid, '[model:', model, ']')
 
     const maxBuffer = 1024 * 1024
     let stdout = ''
@@ -36,14 +98,14 @@ export function runCodex(prompt: string): Promise<string> {
     // Timeout after 120 seconds
     const timer = setTimeout(() => {
       proc.kill('SIGTERM')
-      done(new Error('Codex timed out after 120 seconds'))
+      done(new Error(`${runner} timed out after 120 seconds`))
     }, 120000)
 
     proc.stdout.on('data', (data: Buffer) => {
       stdout += data.toString()
       if (stdout.length > maxBuffer) {
         proc.kill('SIGTERM')
-        done(new Error('Codex output exceeded max buffer size'))
+        done(new Error(`${runner} output exceeded max buffer size`))
       }
     })
 
@@ -53,16 +115,16 @@ export function runCodex(prompt: string): Promise<string> {
 
     proc.on('close', (code) => {
       if (code === 0) {
-        console.log('[chat] codex responded, length:', stdout.length)
+        console.log(`[chat] ${runner} responded, length:`, stdout.length)
         done(null, stdout.trim())
       } else {
-        console.error('[chat] codex spawn error:', { code, stderr })
-        done(new Error(stderr || `Codex exited with code ${code}`))
+        console.error(`[chat] ${runner} spawn error:`, { code, stderr })
+        done(new Error(stderr || `${runner} exited with code ${code}`))
       }
     })
 
     proc.on('error', (err) => {
-      console.error('[chat] codex spawn error:', err.message)
+      console.error(`[chat] ${runner} spawn error:`, err.message)
       done(new Error(err.message))
     })
 
@@ -76,7 +138,7 @@ export function runCodex(prompt: string): Promise<string> {
   })
 }
 
-// Limit concurrent Codex processes
+// Limit concurrent model chat processes
 let activeChatRequests = 0
 const MAX_CONCURRENT_CHATS = 2
 
@@ -235,8 +297,10 @@ export async function handleChatRequest(req: Connect.IncomingMessage, res: Serve
         storyFile,
       })
 
-      // Run Codex OUTSIDE the lock — this is the slow part (up to 120s)
-      const aiReply = await runCodex(prompt)
+      const chatConfig = await loadChatConfig()
+
+      // Run model OUTSIDE the lock — this is the slow part (up to 120s)
+      const aiReply = await runChatModel(prompt, chatConfig.model, chatConfig.runner)
 
       // Only lock for the atomic read-modify-write of the chat file
       await withFileLock(chatPath, async () => {
