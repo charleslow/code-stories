@@ -15,6 +15,7 @@ interface ChapterDisplayProps {
   storyRepo?: string | null;
   storyPR?: PRMetadata;
   chatAvailable?: boolean;
+  chatModel?: string | null;
   storyId?: string;
   displayMode: DisplayMode;
 }
@@ -37,7 +38,7 @@ function useIsMobile() {
   );
 }
 
-export function ChapterDisplay({ chapter, currentIndex, totalChapters, onPrev, onNext, storyQuery, storyRepo, storyPR, chatAvailable, storyId, displayMode }: ChapterDisplayProps) {
+export function ChapterDisplay({ chapter, currentIndex, totalChapters, onPrev, onNext, storyQuery, storyRepo, storyPR, chatAvailable, chatModel, storyId, displayMode }: ChapterDisplayProps) {
   const isFirst = currentIndex === 0;
   const isLast = currentIndex === totalChapters - 1;
   const isMobile = useIsMobile();
@@ -107,7 +108,7 @@ export function ChapterDisplay({ chapter, currentIndex, totalChapters, onPrev, o
       )}
       {isMobile && activeTab === 'chat' && chatAvailable && storyId && (
         <div className="chat-panel-fullscreen">
-          <ChatPanel storyId={storyId} chapterId={chapter.id} />
+          <ChatPanel storyId={storyId} chapterId={chapter.id} chatModel={chatModel} />
         </div>
       )}
       {!(isMobile && activeTab === 'chat') && <div className="chapter-content" ref={containerRef}>
@@ -135,7 +136,7 @@ export function ChapterDisplay({ chapter, currentIndex, totalChapters, onPrev, o
               explanation={chapter.explanation}
             />
             {chatAvailable && storyId && !isMobile && (
-              <ChatPanel storyId={storyId} chapterId={chapter.id} />
+              <ChatPanel storyId={storyId} chapterId={chapter.id} chatModel={chatModel} />
             )}
           </div>
         )}

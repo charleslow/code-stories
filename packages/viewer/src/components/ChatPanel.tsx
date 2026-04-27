@@ -7,12 +7,20 @@ import { sendChatMessage, fetchChatHistory } from '../services/api';
 interface ChatPanelProps {
   storyId: string;
   chapterId: string;
+  chatModel?: string | null;
+}
+
+function assistantLabel(model: string | null | undefined): string {
+  if (model?.startsWith('claude-')) return 'Claude';
+  return 'Codex';
 }
 
 export default function ChatPanel({
   storyId,
   chapterId,
+  chatModel,
 }: ChatPanelProps) {
+  const modelLabel = assistantLabel(chatModel);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -108,7 +116,7 @@ export default function ChatPanel({
         <div className="chat-messages">
           {messages.map((msg, i) => (
             <div key={i} className={`chat-message chat-message-${msg.role}`}>
-              <div className="chat-message-role">{msg.role === 'user' ? 'You' : 'Codex'}</div>
+              <div className="chat-message-role">{msg.role === 'user' ? 'You' : modelLabel}</div>
               <div className="chat-message-content">
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>
                   {msg.content}
@@ -118,7 +126,7 @@ export default function ChatPanel({
           ))}
           {loading && (
             <div className="chat-message chat-message-assistant">
-              <div className="chat-message-role">Codex</div>
+              <div className="chat-message-role">{modelLabel}</div>
               <div className="chat-message-content chat-thinking">Thinking...</div>
             </div>
           )}

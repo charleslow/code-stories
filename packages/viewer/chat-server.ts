@@ -1,4 +1,5 @@
 import path from 'path'
+import fs from 'fs'
 import fsPromises from 'fs/promises'
 import { spawn } from 'child_process'
 import type { Connect } from 'vite'
@@ -6,6 +7,27 @@ import type { ServerResponse } from 'http'
 import { isSafeId, readBody, buildChatPrompt, withFileLock } from './chat-utils'
 
 const storiesDir = path.resolve(__dirname, '../../stories')
+
+function loadChatModel(): string | null {
+  const configPath = path.resolve(__dirname, '../../config.yaml')
+  try {
+    const lines = fs.readFileSync(configPath, 'utf-8').split('\n')
+    let inModels = false
+    for (const line of lines) {
+      if (/^models\s*:/.test(line)) { inModels = true; continue }
+      if (inModels) {
+        if (/^\S/.test(line) && line.trim() && !line.startsWith('#')) inModels = false
+        const m = line.match(/^\s+chat\s*:\s*(.+)/)
+        if (m) return m[1].trim().replace(/^["']|["']$/g, '')
+      }
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+const chatModel = loadChatModel()
 
 function jsonResponse(res: ServerResponse, data: unknown, status = 200) {
   res.writeHead(status, { 'Content-Type': 'application/json' })
@@ -76,7 +98,78 @@ export function runCodex(prompt: string): Promise<string> {
   })
 }
 
-// Limit concurrent Codex processes
+export function runClaude(prompt: string, model?: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let settled = false
+    const done = (err: Error | null, result?: string) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      if (err) reject(err)
+      else resolve(result!)
+    }
+
+    const args = ['--print', '--dangerously-skip-permissions']
+    if (model) args.push('--model', model)
+
+    const proc = spawn('claude', args, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      cwd: storiesDir,
+    })
+    console.log('[chat] claude process pid:', proc.pid)
+
+    const maxBuffer = 1024 * 1024
+    let stdout = ''
+    let stderr = ''
+
+    const timer = setTimeout(() => {
+      proc.kill('SIGTERM')
+      done(new Error('Claude timed out after 120 seconds'))
+    }, 120000)
+
+    proc.stdout.on('data', (data: Buffer) => {
+      stdout += data.toString()
+      if (stdout.length > maxBuffer) {
+        proc.kill('SIGTERM')
+        done(new Error('Claude output exceeded max buffer size'))
+      }
+    })
+
+    proc.stderr.on('data', (data: Buffer) => {
+      if (stderr.length < maxBuffer) stderr += data.toString()
+    })
+
+    proc.on('close', (code) => {
+      if (code === 0) {
+        console.log('[chat] claude responded, length:', stdout.length)
+        done(null, stdout.trim())
+      } else {
+        console.error('[chat] claude spawn error:', { code, stderr })
+        done(new Error(stderr || `Claude exited with code ${code}`))
+      }
+    })
+
+    proc.on('error', (err) => {
+      console.error('[chat] claude spawn error:', err.message)
+      done(new Error(err.message))
+    })
+
+    proc.stdin.on('error', (err) => {
+      console.error('[chat] stdin write error:', err.message)
+    })
+    proc.stdin.write(prompt)
+    proc.stdin.end()
+  })
+}
+
+function runChat(prompt: string): Promise<string> {
+  if (chatModel?.startsWith('claude-')) {
+    return runClaude(prompt, chatModel)
+  }
+  return runCodex(prompt)
+}
+
+// Limit concurrent chat processes
 let activeChatRequests = 0
 const MAX_CONCURRENT_CHATS = 2
 
@@ -149,7 +242,7 @@ async function readStoryFile(storyId: string) {
 export async function handleChatRequest(req: Connect.IncomingMessage, res: ServerResponse, next: Connect.NextFunction) {
   // Chat availability check
   if (req.url === '/_chat/available') {
-    return jsonResponse(res, { available: true })
+    return jsonResponse(res, { available: true, model: chatModel ?? null })
   }
 
   // Chat history: GET /_chat/:storyId
@@ -235,8 +328,8 @@ export async function handleChatRequest(req: Connect.IncomingMessage, res: Serve
         storyFile,
       })
 
-      // Run Codex OUTSIDE the lock — this is the slow part (up to 120s)
-      const aiReply = await runCodex(prompt)
+      // Run chat model OUTSIDE the lock — this is the slow part (up to 120s)
+      const aiReply = await runChat(prompt)
 
       // Only lock for the atomic read-modify-write of the chat file
       await withFileLock(chatPath, async () => {
