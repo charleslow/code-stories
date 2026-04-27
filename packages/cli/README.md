@@ -1,17 +1,28 @@
 # Code Stories CLI
 
-Generate narrative-driven code stories using Codex. A code story is a guided walkthrough of your codebase that answers questions like "How does authentication work?" or "Trace a request from API to database".
+Generate narrative-driven code stories using a dual-model pipeline. A code story is a guided walkthrough of your codebase that answers questions like "How does authentication work?" or "Trace a request from API to database".
 
 Stories are optimized to answer the first layer of newcomer follow-up questions, not
-just summarize modules. The generator now aims to define unfamiliar terms, make key
-handoff boundaries explicit, point to concrete lines that do the important work, and
-call out major scope limits or runtime caveats when the code supports them.
+just summarize modules. The generator defines unfamiliar terms, makes key handoff
+boundaries explicit, points to concrete lines that do the important work, and calls
+out major scope limits or runtime caveats when the code supports them.
 
 ## Installation
 
 ```bash
 npm install -g code-stories
 ```
+
+## Requirements
+
+- Node.js 18+
+- [Codex CLI](https://github.com/openai/codex) (`npm install -g @openai/codex`) — configured with an OpenAI API key
+- [Claude CLI](https://docs.anthropic.com/en/docs/claude-code) (`npm install -g @anthropic-ai/claude-code`) — configured with an Anthropic API key
+- A git repository to analyze
+
+For PR/MR review mode only:
+- [GitHub CLI](https://cli.github.com/) (`gh`) — for GitHub PRs
+- [GitLab CLI](https://gitlab.com/gitlab-org/cli) (`glab`) — for GitLab MRs
 
 ## Usage
 
@@ -28,8 +39,8 @@ code-stories --resume <id>         # resume by generation ID (prefix match suppo
 ```
 
 The CLI will:
-1. Analyze your codebase using Codex
-2. Create a multi-chapter narrative explaining the code
+1. Analyze your codebase using Codex (exploration, snippet selection, final assembly)
+2. Plan the narrative and write prose explanations using Claude (outline, explanations)
 3. Save the story as JSON in `./stories/{id}.json`
 
 If a generation times out or is interrupted, the intermediate progress is preserved
@@ -56,23 +67,44 @@ Use the [Code Stories Viewer](https://charleslow.github.io/code-stories/) to rea
 
 Or load any story JSON URL directly: `https://charleslow.github.io/code-stories/?url=<story-json-url>`
 
-## Requirements
+## Configuring Models
 
-- Node.js 18+
-- Codex CLI installed and configured
-- Git repository (for commit hash tracking)
+Place a `config.yaml` file in the directory where you run `code-stories` to override
+the default model for any stage:
+
+```yaml
+models:
+  # Codex stages
+  explore: codex-mini-latest        # Stage 1: codebase exploration
+  snippets: codex-mini-latest       # Stage 3: snippet selection
+  assemble: codex-mini-latest       # Stage 5: final assembly
+  pr: codex-mini-latest             # PR review mode
+
+  # Claude stages
+  outline: claude-sonnet-4-5        # Stage 2: chapter outline planning
+  explanations: claude-opus-4-7     # Stage 4: prose explanations
+```
+
+Any omitted key uses that CLI's default model. If a model name is invalid or
+unavailable, the stage will fail immediately with a clear error that includes the
+model name and the CLI's own diagnostic output.
 
 ## How It Works
 
-The CLI uses a 6-stage generation pipeline:
+The CLI uses a 5-stage dual-model pipeline:
 
-1. **Explore** - Understand the codebase structure
-2. **Outline** - Create a narrative structure
-3. **Review** - Refine the flow and pacing
-4. **Identify Snippets** - Select exact code to display
-5. **Craft Explanations** - Write context-aware prose
-6. **Quality Check & Finalize** - Validate constraints and output JSON
+| Stage | Runner | Description |
+|-------|--------|-------------|
+| 1. Explore | Codex | Scans the file tree, reads key files, documents architecture |
+| 2. Outline | Claude | Plans 5–30 chapters with a single teaching point each |
+| 3. Snippets | Codex | Selects exact code line ranges for each chapter |
+| 4. Explanations | Claude | Writes prose for each chapter (60–300 words each) |
+| 5. Assemble | Codex | Quality-checks constraints and outputs the final JSON |
 
 Each stage produces checkpointed intermediate files in `stories/.tmp/<id>/`.
 On success these are cleaned up. On failure they're preserved so you can resume
 with `--resume`.
+
+Codex is used for stages that need file-system tool access (reading sources,
+verifying line numbers). Claude is used for stages that are pure reasoning and
+prose — outline planning and explanation writing.

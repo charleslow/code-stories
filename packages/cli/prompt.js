@@ -1,5 +1,13 @@
-// Build a single prompt for code story generation.
-// Returns { prompt, checkpoints } for a single LLM call.
+// Build stage-specific prompts for the dual-model story generation pipeline.
+// Stages 1, 3, 5 run in Codex. Stages 2, 4 run in Claude CLI.
+
+// Format a checkpoint writing instruction.
+// description: what to write (e.g. "Write your notes")
+// filePath: absolute path to the output file
+// marker: the sentinel string that must appear at the end of the file
+function cp(description, filePath, marker) {
+  return `**Checkpoint:** ${description} to \`${filePath}\`.\nEnd the file with the line: ${marker}`;
+}
 
 const JSON_SCHEMA = `{
   "id": "string (UUID)",
@@ -25,59 +33,43 @@ const JSON_SCHEMA = `{
   ]
 }`;
 
-export function buildPrompt(query, generationDir, commitHash, generationId, repoId) {
+const NARRATOR_PREAMBLE = `You are an expert code narrator. Your job is to help create a "code story" — a guided,
+chapter-by-chapter tour of a codebase that reads like a friendly colleague walking
+someone through the code. The aim is not just to communicate information, but insights.`;
+
+// Stage 1: Explore the codebase (runs in Codex)
+export function buildExplorePrompt(query, generationDir) {
   return {
     checkpoints: [
       { file: 'exploration_scan.md', checkpoint: 'EXPLORATION_SCANNED' },
       { file: 'exploration_read.md', checkpoint: 'EXPLORATION_READ' },
       { file: 'exploration_notes.md', checkpoint: 'STAGE_1_COMPLETE' },
-      { file: 'narrative_outline.md', checkpoint: 'STAGE_2_COMPLETE' },
-      { file: 'snippets_mapping.md', checkpoint: 'STAGE_3_COMPLETE' },
-      { file: 'explanations_draft.md', checkpoint: 'STAGE_4_COMPLETE' },
-      { file: 'story.json', checkpoint: null },
     ],
-    prompt: `You are an expert code narrator. Your job is to help create a "code story" — a guided,
-chapter-by-chapter tour of a codebase that reads like a friendly colleague walking
-someone through the code. The aim is not just to communicate information, but insights.
+    prompt: `${NARRATOR_PREAMBLE}
 
 The user's query is: "${query}"
 
-You will produce a single JSON object matching this schema:
-${JSON_SCHEMA}
+## Your Task: Stage 1 — Explore the Codebase
 
-Use these fixed values:
-- id: "${generationId}"
-- commitHash: "${commitHash}"
-- repo: ${repoId ? `"${repoId}"` : "null"}
-- createdAt: current ISO 8601 timestamp
-- query: "${query}"
+Your exploration notes will be handed off to a separate model for outline planning.
+Write them as a comprehensive, self-contained briefing — the receiving model has not
+seen the codebase and will rely on your notes as its primary source of understanding.
 
-## Instructions
-
-Follow these stages in strict sequential order. After completing each stage, you MUST
-immediately write its checkpoint file to disk before starting any work on the next stage.
-Do not skip ahead, batch file writes, or begin a later stage until the current stage's
-checkpoint file has been written. If a checkpoint file already exists with the expected
-marker, you may skip that stage.
-
----
-
-## Stage 1: Explore the Codebase
+Follow these steps in strict order. Write each checkpoint file before moving to the next.
+If a checkpoint file already exists with the expected marker, skip that step.
 
 ### Step 1.1: Scan the file tree
 Use Glob to discover the project structure and identify files relevant to the query.
 
-**Checkpoint:** Write your list of relevant files to ${generationDir}/exploration_scan.md.
-End the file with the line: EXPLORATION_SCANNED
+${cp('Write your list of relevant files', `${generationDir}/exploration_scan.md`, 'EXPLORATION_SCANNED')}
 
 ### Step 1.2: Read key files
 Read the important source files. Take notes on entry points and control flow.
 
-**Checkpoint:** Write your notes to ${generationDir}/exploration_read.md.
-End the file with the line: EXPLORATION_READ
+${cp('Write your notes', `${generationDir}/exploration_read.md`, 'EXPLORATION_READ')}
 
 ### Step 1.3: Document findings
-Synthesize your understanding of:
+Synthesize your understanding into comprehensive notes covering:
 - Core data structures and algorithms
 - Design patterns and architectural decisions
 - Interesting "why" decisions (not just "what")
@@ -89,14 +81,33 @@ Synthesize your understanding of:
 - Important scope boundaries: what this story can explain directly from code, and what
   is only implied or intentionally out of scope
 
-**Checkpoint:** Write your full exploration notes to ${generationDir}/exploration_notes.md.
-End the file with the line: STAGE_1_COMPLETE
+${cp('Write your full exploration notes', `${generationDir}/exploration_notes.md`, 'STAGE_1_COMPLETE')}`,
+  };
+}
+
+// Stage 2: Plan the chapter outline (runs in Claude CLI)
+export function buildOutlinePrompt(query, generationDir, explorationNotes) {
+  return {
+    checkpoints: [
+      { file: 'narrative_outline.md', checkpoint: 'STAGE_2_COMPLETE' },
+    ],
+    prompt: `${NARRATOR_PREAMBLE}
+
+The user's query is: "${query}"
+
+## Your Task: Stage 2 — Plan the Chapter Outline
+
+You are receiving a handoff from the codebase exploration stage. The synthesized
+exploration notes are embedded below. If you need additional depth on specific files
+or code paths, you also have tool access to the raw exploration files:
+- ${generationDir}/exploration_scan.md (full file tree scan)
+- ${generationDir}/exploration_read.md (detailed per-file reading notes)
+
+<exploration_notes>
+${explorationNotes}
+</exploration_notes>
 
 ---
-
-## Stage 2: Plan the Outline
-
-Review your exploration notes, then design the chapter outline for the story.
 
 Design 5-30 chapters based on both the codebase complexity AND the user's requested
 depth. If the user asks for a detailed, comprehensive, in-depth, or thorough story,
@@ -157,14 +168,29 @@ Before finalizing, verify your outline against this checklist and revise if need
 14. **Scope coverage**: Where will the story say what it is NOT covering, or what is
     only implied rather than directly shown?
 
-**Checkpoint:** Write your verified outline to ${generationDir}/narrative_outline.md.
-End the file with the line: STAGE_2_COMPLETE
+${cp('Write your verified outline', `${generationDir}/narrative_outline.md`, 'STAGE_2_COMPLETE')}`,
+  };
+}
+
+// Stage 3: Identify code snippets (runs in Codex)
+export function buildSnippetsPrompt(generationDir, narrativeOutline) {
+  return {
+    checkpoints: [
+      { file: 'snippets_mapping.md', checkpoint: 'STAGE_3_COMPLETE' },
+    ],
+    prompt: `${NARRATOR_PREAMBLE}
+
+## Your Task: Stage 3 — Identify Snippets
+
+You are receiving a handoff from the outline planning stage. The chapter outline is
+embedded below. Read the actual source files to find and verify exact code snippets
+for each chapter.
+
+<narrative_outline>
+${narrativeOutline}
+</narrative_outline>
 
 ---
-
-## Stage 3: Identify Snippets
-
-Review your outline, then select the exact code snippets to show in each chapter.
 
 For each chapter in the outline, select the exact code to show.
 
@@ -201,15 +227,46 @@ For each chapter, document:
 - Each snippet: filePath, startLine, endLine
 - Read the actual source files and verify the code content at those line ranges
 
-**Checkpoint:** Write your snippet selections to ${generationDir}/snippets_mapping.md.
-End the file with the line: STAGE_3_COMPLETE
+${cp('Write your snippet selections', `${generationDir}/snippets_mapping.md`, 'STAGE_3_COMPLETE')}`,
+  };
+}
+
+// Stage 4: Craft chapter explanations (runs in Claude CLI)
+export function buildExplanationsPrompt(query, generationDir, explorationNotes, narrativeOutline, snippetsMapping) {
+  return {
+    checkpoints: [
+      { file: 'explanations_draft.md', checkpoint: 'STAGE_4_COMPLETE' },
+    ],
+    prompt: `${NARRATOR_PREAMBLE}
+
+The user's query is: "${query}"
+
+## Your Task: Stage 4 — Craft Explanations
+
+You are receiving a handoff from the snippet selection stage. All context from previous
+stages is embedded below.
+
+You have full tool access to:
+- The repository source files (in your working directory) — use these to read code,
+  verify snippet content, or explore additional context beyond what's listed below.
+- ${generationDir}/ — read any of the detailed exploration files, and write scratch
+  notes here if useful before producing the final draft.
+
+<exploration_notes>
+${explorationNotes}
+</exploration_notes>
+
+<narrative_outline>
+${narrativeOutline}
+</narrative_outline>
+
+<snippets_mapping>
+${snippetsMapping}
+</snippets_mapping>
 
 ---
 
-## Stage 4: Craft Explanations
-
-Review your outline and snippet selections, then write the explanation for each chapter
-in markdown.
+Write the explanation for each chapter in markdown.
 
 Guidelines:
 - Explanation length MUST vary based on the chapter's complexity:
@@ -273,18 +330,33 @@ Guidelines:
 - Stories should be comprehensive and self-contained — explain concepts so the reader
   doesn't need to look things up elsewhere
 
-**Checkpoint:** Write your draft explanations to ${generationDir}/explanations_draft.md.
-End the file with the line: STAGE_4_COMPLETE
+${cp('Write your draft explanations', `${generationDir}/explanations_draft.md`, 'STAGE_4_COMPLETE')}`,
+  };
+}
 
----
+// Stage 5: Quality check and assemble final JSON (runs in Codex)
+export function buildAssemblePrompt(query, generationDir, commitHash, generationId, repoId) {
+  return {
+    checkpoints: [
+      { file: 'story.json', checkpoint: null },
+    ],
+    prompt: `${NARRATOR_PREAMBLE}
 
-## Stage 5: Quality Check & Final Output
+The user's query is: "${query}"
 
-Read back all your work:
+## Your Task: Stage 5 — Quality Check & Final Output
+
+Read back all your work from the generation directory:
 - ${generationDir}/exploration_notes.md (architecture findings)
 - ${generationDir}/narrative_outline.md (chapter outline)
 - ${generationDir}/snippets_mapping.md (selected code snippets)
 - ${generationDir}/explanations_draft.md (draft explanations)
+
+Use these fixed values in the final JSON:
+- id: "${generationId}"
+- commitHash: "${commitHash}"
+- repo: ${repoId ? `"${repoId}"` : 'null'}
+- createdAt: current ISO 8601 timestamp
 
 Assemble the complete story JSON from your work. Before outputting, verify each
 constraint. If any check fails, revise before outputting.
@@ -308,6 +380,9 @@ For each snippet, read the actual source file to verify the content matches exac
 and the line numbers are accurate. Fix any discrepancies.
 
 ## Output
+
+The JSON schema is:
+${JSON_SCHEMA}
 
 Output the final JSON as a single fenced code block (\`\`\`json ... \`\`\`).
 The JSON must be valid and match the schema exactly.
