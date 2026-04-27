@@ -8,6 +8,7 @@ import path from 'path';
 import os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 import yaml from 'js-yaml';
+import { getCheckpointStatus, formatMissingCheckpoints } from './checkpoints.js';
 import { buildExplorePrompt, buildOutlinePrompt, buildSnippetsPrompt, buildExplanationsPrompt, buildAssemblePrompt } from './prompt.js';
 import { buildPRPrompt } from './prompt-pr.js';
 import { fetchPRData } from './pr.js';
@@ -234,68 +235,64 @@ function runCodex({ prompt, cwd, generationDir, checkpoints, timeoutMs, verbose,
       if (verbose) process.stderr.write(chunk);
     });
 
+    let settled = false;
+    const settle = (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      clearInterval(progressInterval);
+      if (error) reject(error);
+      else resolve();
+    };
+
     // Poll for checkpoint progress within this stage
     let lastCompleted = 0;
     const progressInterval = setInterval(() => {
-      let completed = 0;
-      for (const cp of checkpoints) {
-        const filePath = path.join(generationDir, cp.file);
-        if (!fs.existsSync(filePath)) break;
-        if (cp.checkpoint) {
-          const content = fs.readFileSync(filePath, 'utf-8');
-          if (!content.includes(cp.checkpoint)) break;
-        }
-        completed++;
-      }
-      if (completed > lastCompleted) {
-        lastCompleted = completed;
-        if (onCheckpoint) onCheckpoint(completed - 1);
+      const status = getCheckpointStatus(generationDir, checkpoints);
+      if (status.completed > lastCompleted) {
+        lastCompleted = status.completed;
+        if (onCheckpoint) onCheckpoint(status.completed - 1);
       }
     }, 1000);
 
     // Per-stage timeout
     const timer = setTimeout(() => {
-      clearInterval(progressInterval);
+      const status = getCheckpointStatus(generationDir, checkpoints);
       codex.kill('SIGTERM');
-      reject(new Error(`Stage timed out after ${timeoutMs / 60_000} minutes`));
+      if (status.complete) {
+        settle();
+      } else {
+        settle(new Error(
+          `Stage timed out after ${timeoutMs / 60_000} minutes` +
+          formatMissingCheckpoints(status)
+        ));
+      }
     }, timeoutMs);
 
     codex.on('error', (error) => {
-      clearTimeout(timer);
-      clearInterval(progressInterval);
       if (error.code === 'ENOENT') {
-        reject(new Error(
+        settle(new Error(
           'Codex CLI not found. Install it with: npm install -g @openai/codex\n' +
           'See: https://github.com/openai/codex'
         ));
       } else {
-        reject(new Error(`Failed to spawn Codex CLI: ${error.message}`));
+        settle(new Error(`Failed to spawn Codex CLI: ${error.message}`));
       }
     });
 
     codex.on('close', (code) => {
-      clearTimeout(timer);
-      clearInterval(progressInterval);
-
       // Verify all checkpoints for this stage are complete
-      const allComplete = checkpoints.every(cp => {
-        const filePath = path.join(generationDir, cp.file);
-        if (!fs.existsSync(filePath)) return false;
-        if (cp.checkpoint) {
-          const content = fs.readFileSync(filePath, 'utf-8');
-          return content.includes(cp.checkpoint);
-        }
-        return true;
-      });
+      const status = getCheckpointStatus(generationDir, checkpoints);
 
-      if (allComplete) {
-        resolve();
+      if (status.complete) {
+        settle();
       } else {
         let msg = `Codex stage did not produce expected outputs (exit code: ${code})`;
         if (model) msg += ` [model: ${model}]`;
+        msg += formatMissingCheckpoints(status);
         if (stderr) msg += `\nstderr: ${stderr.slice(0, 500)}`;
         if (stdout) msg += `\nstdout: ${stdout.slice(0, 500)}`;
-        reject(new Error(msg));
+        settle(new Error(msg));
       }
     });
   });
@@ -335,65 +332,61 @@ function runClaude({ prompt, cwd, generationDir, checkpoints, timeoutMs, verbose
       if (verbose) process.stderr.write(chunk);
     });
 
+    let settled = false;
+    const settle = (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      clearInterval(progressInterval);
+      if (error) reject(error);
+      else resolve();
+    };
+
     let lastCompleted = 0;
     const progressInterval = setInterval(() => {
-      let completed = 0;
-      for (const cp of checkpoints) {
-        const filePath = path.join(generationDir, cp.file);
-        if (!fs.existsSync(filePath)) break;
-        if (cp.checkpoint) {
-          const content = fs.readFileSync(filePath, 'utf-8');
-          if (!content.includes(cp.checkpoint)) break;
-        }
-        completed++;
-      }
-      if (completed > lastCompleted) {
-        lastCompleted = completed;
-        if (onCheckpoint) onCheckpoint(completed - 1);
+      const status = getCheckpointStatus(generationDir, checkpoints);
+      if (status.completed > lastCompleted) {
+        lastCompleted = status.completed;
+        if (onCheckpoint) onCheckpoint(status.completed - 1);
       }
     }, 1000);
 
     const timer = setTimeout(() => {
-      clearInterval(progressInterval);
+      const status = getCheckpointStatus(generationDir, checkpoints);
       claude.kill('SIGTERM');
-      reject(new Error(`Stage timed out after ${timeoutMs / 60_000} minutes`));
+      if (status.complete) {
+        settle();
+      } else {
+        settle(new Error(
+          `Stage timed out after ${timeoutMs / 60_000} minutes` +
+          formatMissingCheckpoints(status)
+        ));
+      }
     }, timeoutMs);
 
     claude.on('error', (error) => {
-      clearTimeout(timer);
-      clearInterval(progressInterval);
       if (error.code === 'ENOENT') {
-        reject(new Error(
+        settle(new Error(
           'Claude CLI not found. Install it with: npm install -g @anthropic-ai/claude-code\n' +
           'See: https://docs.anthropic.com/en/docs/claude-code'
         ));
       } else {
-        reject(new Error(`Failed to spawn Claude CLI: ${error.message}`));
+        settle(new Error(`Failed to spawn Claude CLI: ${error.message}`));
       }
     });
 
     claude.on('close', (code) => {
-      clearTimeout(timer);
-      clearInterval(progressInterval);
+      const status = getCheckpointStatus(generationDir, checkpoints);
 
-      const allComplete = checkpoints.every(cp => {
-        const filePath = path.join(generationDir, cp.file);
-        if (!fs.existsSync(filePath)) return false;
-        if (cp.checkpoint) {
-          const content = fs.readFileSync(filePath, 'utf-8');
-          return content.includes(cp.checkpoint);
-        }
-        return true;
-      });
-
-      if (allComplete) {
-        resolve();
+      if (status.complete) {
+        settle();
       } else {
         let msg = `Claude stage did not produce expected outputs (exit code: ${code})`;
         if (model) msg += ` [model: ${model}]`;
+        msg += formatMissingCheckpoints(status);
         if (stderr) msg += `\nstderr: ${stderr.slice(0, 500)}`;
         if (stdout) msg += `\nstdout: ${stdout.slice(0, 500)}`;
-        reject(new Error(msg));
+        settle(new Error(msg));
       }
     });
   });
