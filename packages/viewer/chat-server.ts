@@ -1,82 +1,79 @@
 import path from 'path'
 import fsPromises from 'fs/promises'
-import { spawn } from 'child_process'
 import type { Connect } from 'vite'
 import type { ServerResponse } from 'http'
 import { isSafeId, readBody, buildChatPrompt, withFileLock } from './chat-utils'
+import Anthropic from '@anthropic-ai/sdk'
+import { parse as parseYaml } from 'yaml'
 
 const storiesDir = path.resolve(__dirname, '../../stories')
+const projectRoot = path.resolve(__dirname, '../../..')
 
 function jsonResponse(res: ServerResponse, data: unknown, status = 200) {
   res.writeHead(status, { 'Content-Type': 'application/json' })
   res.end(JSON.stringify(data))
 }
 
-export function runCodex(prompt: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    let settled = false
-    const done = (err: Error | null, result?: string) => {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
-      if (err) reject(err)
-      else resolve(result!)
-    }
+let cachedConfig: { chat?: string } | null = null
+let configLoadTime = 0
+const CONFIG_CACHE_TTL = 60000 // 60 seconds
 
-    const proc = spawn('codex', ['exec', '--full-auto', '-'], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      cwd: storiesDir,
-    })
-    console.log('[chat] codex process pid:', proc.pid)
+async function loadConfigModel(): Promise<string> {
+  const now = Date.now()
+  if (cachedConfig && now - configLoadTime < CONFIG_CACHE_TTL) {
+    return cachedConfig.chat || 'claude-sonnet-4-6'
+  }
 
-    const maxBuffer = 1024 * 1024
-    let stdout = ''
-    let stderr = ''
-
-    // Timeout after 120 seconds
-    const timer = setTimeout(() => {
-      proc.kill('SIGTERM')
-      done(new Error('Codex timed out after 120 seconds'))
-    }, 120000)
-
-    proc.stdout.on('data', (data: Buffer) => {
-      stdout += data.toString()
-      if (stdout.length > maxBuffer) {
-        proc.kill('SIGTERM')
-        done(new Error('Codex output exceeded max buffer size'))
-      }
-    })
-
-    proc.stderr.on('data', (data: Buffer) => {
-      if (stderr.length < maxBuffer) stderr += data.toString()
-    })
-
-    proc.on('close', (code) => {
-      if (code === 0) {
-        console.log('[chat] codex responded, length:', stdout.length)
-        done(null, stdout.trim())
-      } else {
-        console.error('[chat] codex spawn error:', { code, stderr })
-        done(new Error(stderr || `Codex exited with code ${code}`))
-      }
-    })
-
-    proc.on('error', (err) => {
-      console.error('[chat] codex spawn error:', err.message)
-      done(new Error(err.message))
-    })
-
-    // Send prompt via stdin (avoids argument length limits and thinking-state hangs)
-    proc.stdin.on('error', (err) => {
-      console.error('[chat] stdin write error:', err.message)
-      /* process died before prompt was fully written; close handler will settle */
-    })
-    proc.stdin.write(prompt)
-    proc.stdin.end()
-  })
+  try {
+    const configPath = path.join(projectRoot, 'config.yaml')
+    const configContent = await fsPromises.readFile(configPath, 'utf-8')
+    const config = parseYaml(configContent) as { models?: Record<string, string> }
+    cachedConfig = { chat: config.models?.chat }
+    configLoadTime = now
+    return config.models?.chat || 'claude-sonnet-4-6'
+  } catch (err) {
+    console.error('[chat] error loading config.yaml:', err instanceof Error ? err.message : err)
+    return 'claude-sonnet-4-6'
+  }
 }
 
-// Limit concurrent Codex processes
+export async function runCodex(prompt: string): Promise<string> {
+  const apiKey = process.env.ANTHROPIC_API_KEY
+  if (!apiKey) {
+    throw new Error('ANTHROPIC_API_KEY environment variable not set')
+  }
+
+  const chatModel = await loadConfigModel()
+  console.log('[chat] using model:', chatModel)
+
+  const client = new Anthropic({ apiKey })
+
+  try {
+    const message = await client.messages.create({
+      model: chatModel,
+      max_tokens: 4096,
+      messages: [
+        {
+          role: 'user',
+          content: prompt,
+        },
+      ],
+    })
+
+    if (message.content[0]?.type === 'text') {
+      console.log('[chat] claude responded, length:', message.content[0].text.length)
+      return message.content[0].text
+    } else {
+      throw new Error('Unexpected response format from Claude')
+    }
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err)
+    console.error('[chat] claude error:', errorMessage)
+    throw err
+  }
+}
+
+// Limit concurrent chat requests
 let activeChatRequests = 0
 const MAX_CONCURRENT_CHATS = 2
 
@@ -235,7 +232,7 @@ export async function handleChatRequest(req: Connect.IncomingMessage, res: Serve
         storyFile,
       })
 
-      // Run Codex OUTSIDE the lock — this is the slow part (up to 120s)
+      // Run Claude OUTSIDE the lock — this is the slow part
       const aiReply = await runCodex(prompt)
 
       // Only lock for the atomic read-modify-write of the chat file
