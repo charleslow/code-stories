@@ -69,8 +69,7 @@ Or load any story JSON URL directly: `https://charleslow.github.io/code-stories/
 
 ## Configuring Models
 
-Place a `config.yaml` file in the directory where you run `code-stories` to override
-the default model for any stage:
+The npm package includes a default `config.yaml`:
 
 ```yaml
 models:
@@ -84,7 +83,15 @@ models:
   explanations: claude-opus-4-7     # Stage 4: prose explanations
 ```
 
-Any omitted key uses that CLI's default model. If a model name is invalid or
+Override models for a single run with `--models`:
+
+```bash
+code-stories "How does auth work?" --models explore=gpt-5.4,outline=claude-sonnet-4-6
+```
+
+Model settings are merged in this order: packaged defaults, then `--models`.
+The CLI does not read `config.yaml` from the current working directory. Normal mode
+and PR mode use the same per-stage model keys. If a model name is invalid or
 unavailable, the stage will fail immediately with a clear error that includes the
 model name and the CLI's own diagnostic output.
 

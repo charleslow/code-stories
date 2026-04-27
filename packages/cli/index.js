@@ -7,7 +7,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { v4 as uuidv4 } from 'uuid';
-import yaml from 'js-yaml';
+import { loadDefaultConfig, mergeConfigs, parseModelOverrides } from './config.js';
 import { getCheckpointStatus } from './checkpoints.js';
 import { runSubprocess } from './runner.js';
 import { buildExplorePrompt, buildOutlinePrompt, buildSnippetsPrompt, buildExplanationsPrompt, buildAssemblePrompt } from './prompt.js';
@@ -26,50 +26,6 @@ import { detectPlatform, resolveCli, parseRepoId, getCloneUrl, checkoutMR } from
 const STORIES_DIR = path.resolve('./stories');
 const TMP_DIR = path.join(STORIES_DIR, '.tmp');
 const MARKER_FILE = path.join(STORIES_DIR, '.code-stories');
-
-// Load and validate config.yaml from the given directory.
-// Returns a plain object; missing file returns {}.
-function loadConfig(dir) {
-  const configPath = path.join(dir, 'config.yaml');
-  if (!fs.existsSync(configPath)) return {};
-
-  let raw;
-  try {
-    raw = fs.readFileSync(configPath, 'utf-8');
-  } catch (e) {
-    throw new Error(`Failed to read ${configPath}: ${e.message}`);
-  }
-
-  let parsed;
-  try {
-    parsed = yaml.load(raw);
-  } catch (e) {
-    throw new Error(`Failed to parse ${configPath}: ${e.message}`);
-  }
-
-  if (parsed === null || parsed === undefined) return {};
-  if (typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error(`${configPath}: top-level value must be a YAML mapping`);
-  }
-
-  const models = parsed.models;
-  if (models !== undefined) {
-    if (typeof models !== 'object' || Array.isArray(models)) {
-      throw new Error(`${configPath}: "models" must be a mapping of stage names to model strings`);
-    }
-    const validKeys = new Set(['explore', 'outline', 'snippets', 'explanations', 'assemble', 'chat']);
-    for (const key of Object.keys(models)) {
-      if (!validKeys.has(key)) {
-        throw new Error(`${configPath}: unknown model key "${key}". Valid keys: ${[...validKeys].join(', ')}`);
-      }
-      if (typeof models[key] !== 'string') {
-        throw new Error(`${configPath}: models.${key} must be a string`);
-      }
-    }
-  }
-
-  return parsed;
-}
 
 // Ensure directories exist
 function ensureDirectories() {
@@ -498,13 +454,17 @@ program
   .option('-r, --repo <repo>', 'GitHub or GitLab repository (user/repo or full URL)')
   .option('--pr <number>', 'PR/MR number to review', parseInt)
   .option('--resume [id]', 'Resume an interrupted story generation. Pass a generation ID (or prefix) to resume, or omit to list resumable stories.')
+  .option('--models <overrides>', 'Override stage models, e.g. explore=gpt-5.4-mini,outline=claude-sonnet-4-6')
   .option('--verbose', 'Show the agent reasoning process for debugging')
   .action(async (query, options) => {
 
-    // Load optional config.yaml from the current working directory.
+    // Load packaged defaults, then command-line overrides.
     let config = {};
     try {
-      config = loadConfig(process.cwd());
+      config = mergeConfigs(
+        loadDefaultConfig(),
+        parseModelOverrides(options.models),
+      );
     } catch (e) {
       console.error(`Error: ${e.message}`);
       process.exit(1);

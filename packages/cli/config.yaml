@@ -1,0 +1,11 @@
+# config.yaml - packaged default model overrides for code-stories
+#
+# Users can override these defaults with --models stage=model,stage=model.
+
+models:
+  explore: gpt-5.4-mini
+  snippets: gpt-5.4-mini
+  assemble: gpt-5.4
+  outline: claude-sonnet-4-6
+  explanations: claude-sonnet-4-6
+  chat: claude-sonnet-4-6
