@@ -1,0 +1,17 @@
+# config.yaml — per-stage model overrides for code-stories
+#
+# Codex stages (file-system tool access required):
+#   explore      Stage 1: scan file tree, read key files, document architecture
+#   snippets     Stage 3: select exact code line ranges for each chapter
+#   assemble     Stage 5: quality-check constraints and output final JSON
+#   pr           PR review mode (single monolithic Codex call)
+#
+# Claude stages (pure reasoning and prose):
+#   outline      Stage 2: plan 5-30 chapters with one teaching point each
+#   explanations Stage 4: write prose explanations (60-300 words per chapter)
+#
+# Omit any key to use that CLI's default model.
+
+models:
+  outline: claude-opus-4-6
+  explanations: claude-sonnet-4-6

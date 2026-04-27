@@ -7,6 +7,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { v4 as uuidv4 } from 'uuid';
+import yaml from 'js-yaml';
 import { buildExplorePrompt, buildOutlinePrompt, buildSnippetsPrompt, buildExplanationsPrompt, buildAssemblePrompt } from './prompt.js';
 import { buildPRPrompt } from './prompt-pr.js';
 import { fetchPRData } from './pr.js';
@@ -16,6 +17,50 @@ import { detectPlatform, resolveCli, parseRepoId, getCloneUrl, checkoutMR } from
 const STORIES_DIR = path.resolve('./stories');
 const TMP_DIR = path.join(STORIES_DIR, '.tmp');
 const MARKER_FILE = path.join(STORIES_DIR, '.code-stories');
+
+// Load and validate config.yaml from the given directory.
+// Returns a plain object; missing file returns {}.
+function loadConfig(dir) {
+  const configPath = path.join(dir, 'config.yaml');
+  if (!fs.existsSync(configPath)) return {};
+
+  let raw;
+  try {
+    raw = fs.readFileSync(configPath, 'utf-8');
+  } catch (e) {
+    throw new Error(`Failed to read ${configPath}: ${e.message}`);
+  }
+
+  let parsed;
+  try {
+    parsed = yaml.load(raw);
+  } catch (e) {
+    throw new Error(`Failed to parse ${configPath}: ${e.message}`);
+  }
+
+  if (parsed === null || parsed === undefined) return {};
+  if (typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(`${configPath}: top-level value must be a YAML mapping`);
+  }
+
+  const models = parsed.models;
+  if (models !== undefined) {
+    if (typeof models !== 'object' || Array.isArray(models)) {
+      throw new Error(`${configPath}: "models" must be a mapping of stage names to model strings`);
+    }
+    const validKeys = new Set(['explore', 'outline', 'snippets', 'explanations', 'assemble', 'pr']);
+    for (const key of Object.keys(models)) {
+      if (!validKeys.has(key)) {
+        throw new Error(`${configPath}: unknown model key "${key}". Valid keys: ${[...validKeys].join(', ')}`);
+      }
+      if (typeof models[key] !== 'string') {
+        throw new Error(`${configPath}: models.${key} must be a string`);
+      }
+    }
+  }
+
+  return parsed;
+}
 
 // Ensure directories exist
 function ensureDirectories() {
@@ -157,15 +202,11 @@ function getCurrentStage(generationDir) {
 
 // Run the Codex subprocess with the given prompt.
 // Polls for checkpoint files and calls onCheckpoint when progress is detected.
-function runCodex({ prompt, cwd, generationDir, checkpoints, timeoutMs, verbose, onCheckpoint }) {
+function runCodex({ prompt, cwd, generationDir, checkpoints, timeoutMs, verbose, onCheckpoint, model }) {
   return new Promise((resolve, reject) => {
-    const args = [
-      'exec',
-      '--sandbox', 'danger-full-access',
-      '-C', cwd,
-      '--add-dir', generationDir,
-      '-',  // read prompt from stdin
-    ];
+    const args = ['exec'];
+    if (model) args.push('--model', model);
+    args.push('--sandbox', 'danger-full-access', '-C', cwd, '--add-dir', generationDir, '-');
     const cleanEnv = { ...process.env };
     delete cleanEnv.CLAUDECODE;
     delete cleanEnv.CLAUDE_CODE_ENTRYPOINT;
@@ -222,7 +263,14 @@ function runCodex({ prompt, cwd, generationDir, checkpoints, timeoutMs, verbose,
     codex.on('error', (error) => {
       clearTimeout(timer);
       clearInterval(progressInterval);
-      reject(new Error(`Failed to spawn Codex CLI: ${error.message}`));
+      if (error.code === 'ENOENT') {
+        reject(new Error(
+          'Codex CLI not found. Install it with: npm install -g @openai/codex\n' +
+          'See: https://github.com/openai/codex'
+        ));
+      } else {
+        reject(new Error(`Failed to spawn Codex CLI: ${error.message}`));
+      }
     });
 
     codex.on('close', (code) => {
@@ -243,7 +291,8 @@ function runCodex({ prompt, cwd, generationDir, checkpoints, timeoutMs, verbose,
       if (allComplete) {
         resolve();
       } else {
-        let msg = `Stage did not produce expected outputs (exit code: ${code})`;
+        let msg = `Codex stage did not produce expected outputs (exit code: ${code})`;
+        if (model) msg += ` [model: ${model}]`;
         if (stderr) msg += `\nstderr: ${stderr.slice(0, 500)}`;
         if (stdout) msg += `\nstdout: ${stdout.slice(0, 500)}`;
         reject(new Error(msg));
@@ -256,13 +305,10 @@ function runCodex({ prompt, cwd, generationDir, checkpoints, timeoutMs, verbose,
 // Same checkpoint polling contract as runCodex.
 // cwd is the repo directory — Claude's working directory, giving it source file access.
 // generationDir is always added via --add-dir for checkpoint + scratch note writes.
-function runClaude({ prompt, cwd, generationDir, checkpoints, timeoutMs, verbose, onCheckpoint }) {
+function runClaude({ prompt, cwd, generationDir, checkpoints, timeoutMs, verbose, onCheckpoint, model }) {
   return new Promise((resolve, reject) => {
-    const args = [
-      '--print',
-      '--dangerously-skip-permissions',
-      '--add-dir', generationDir,
-    ];
+    const args = ['--print', '--dangerously-skip-permissions', '--add-dir', generationDir];
+    if (model) args.push('--model', model);
     const cleanEnv = { ...process.env };
     delete cleanEnv.CLAUDECODE;
     delete cleanEnv.CLAUDE_CODE_ENTRYPOINT;
@@ -316,7 +362,14 @@ function runClaude({ prompt, cwd, generationDir, checkpoints, timeoutMs, verbose
     claude.on('error', (error) => {
       clearTimeout(timer);
       clearInterval(progressInterval);
-      reject(new Error(`Failed to spawn Claude CLI: ${error.message}`));
+      if (error.code === 'ENOENT') {
+        reject(new Error(
+          'Claude CLI not found. Install it with: npm install -g @anthropic-ai/claude-code\n' +
+          'See: https://docs.anthropic.com/en/docs/claude-code'
+        ));
+      } else {
+        reject(new Error(`Failed to spawn Claude CLI: ${error.message}`));
+      }
     });
 
     claude.on('close', (code) => {
@@ -336,7 +389,8 @@ function runClaude({ prompt, cwd, generationDir, checkpoints, timeoutMs, verbose
       if (allComplete) {
         resolve();
       } else {
-        let msg = `Stage did not produce expected outputs (exit code: ${code})`;
+        let msg = `Claude stage did not produce expected outputs (exit code: ${code})`;
+        if (model) msg += ` [model: ${model}]`;
         if (stderr) msg += `\nstderr: ${stderr.slice(0, 500)}`;
         if (stdout) msg += `\nstdout: ${stdout.slice(0, 500)}`;
         reject(new Error(msg));
@@ -472,7 +526,8 @@ function listIncompleteGenerations() {
 
 // Generate a story by running the full pipeline as a single Codex invocation
 async function generateStory(query, options = {}) {
-  const { cwd = process.cwd(), repoId = null, prData = null, verbose = false, resume = null } = options;
+  const { cwd = process.cwd(), repoId = null, prData = null, verbose = false, resume = null, config = {} } = options;
+  const stageModels = config.models || {};
 
   ensureDirectories();
 
@@ -537,7 +592,7 @@ async function generateStory(query, options = {}) {
     if (prData) {
       // PR mode: monolithic Codex pipeline. local checkpoint index == global index.
       const { prompt, checkpoints } = buildPRPrompt(query, generationDir, commitHash, generationId, repoId, prData);
-      await runCodex({ prompt, cwd, generationDir, checkpoints, timeoutMs: TIMEOUT_MS, verbose, onCheckpoint: updateSpinner });
+      await runCodex({ prompt, cwd, generationDir, checkpoints, timeoutMs: TIMEOUT_MS, verbose, onCheckpoint: updateSpinner, model: stageModels.pr });
     } else {
       // Standard mode: dual-model pipeline.
       // Codex handles exploration, snippet selection, and final assembly.
@@ -547,21 +602,21 @@ async function generateStory(query, options = {}) {
       // Stage 1: Explore (Codex)
       if (getCurrentStage(generationDir) < 3) {
         const { prompt, checkpoints } = buildExplorePrompt(query, generationDir);
-        await runCodex({ prompt, cwd, generationDir, checkpoints, timeoutMs: TIMEOUT_EXPLORE, verbose, onCheckpoint: makeOnCheckpoint(0) });
+        await runCodex({ prompt, cwd, generationDir, checkpoints, timeoutMs: TIMEOUT_EXPLORE, verbose, onCheckpoint: makeOnCheckpoint(0), model: stageModels.explore });
       }
 
       // Stage 2: Outline (Claude) — exploration_notes.md embedded as context
       if (getCurrentStage(generationDir) < 4) {
         const explorationNotes = fs.readFileSync(path.join(generationDir, 'exploration_notes.md'), 'utf-8');
         const { prompt, checkpoints } = buildOutlinePrompt(query, generationDir, explorationNotes);
-        await runClaude({ prompt, cwd, generationDir, checkpoints, timeoutMs: TIMEOUT_OUTLINE, verbose, onCheckpoint: makeOnCheckpoint(3) });
+        await runClaude({ prompt, cwd, generationDir, checkpoints, timeoutMs: TIMEOUT_OUTLINE, verbose, onCheckpoint: makeOnCheckpoint(3), model: stageModels.outline });
       }
 
       // Stage 3: Snippets (Codex) — narrative_outline.md embedded as context
       if (getCurrentStage(generationDir) < 5) {
         const narrativeOutline = fs.readFileSync(path.join(generationDir, 'narrative_outline.md'), 'utf-8');
         const { prompt, checkpoints } = buildSnippetsPrompt(generationDir, narrativeOutline);
-        await runCodex({ prompt, cwd, generationDir, checkpoints, timeoutMs: TIMEOUT_SNIPPETS, verbose, onCheckpoint: makeOnCheckpoint(4) });
+        await runCodex({ prompt, cwd, generationDir, checkpoints, timeoutMs: TIMEOUT_SNIPPETS, verbose, onCheckpoint: makeOnCheckpoint(4), model: stageModels.snippets });
       }
 
       // Stage 4: Explanations (Claude) — all prior checkpoint files embedded as context
@@ -570,13 +625,13 @@ async function generateStory(query, options = {}) {
         const narrativeOutline = fs.readFileSync(path.join(generationDir, 'narrative_outline.md'), 'utf-8');
         const snippetsMapping = fs.readFileSync(path.join(generationDir, 'snippets_mapping.md'), 'utf-8');
         const { prompt, checkpoints } = buildExplanationsPrompt(query, generationDir, explorationNotes, narrativeOutline, snippetsMapping);
-        await runClaude({ prompt, cwd, generationDir, checkpoints, timeoutMs: TIMEOUT_EXPLANATIONS, verbose, onCheckpoint: makeOnCheckpoint(5) });
+        await runClaude({ prompt, cwd, generationDir, checkpoints, timeoutMs: TIMEOUT_EXPLANATIONS, verbose, onCheckpoint: makeOnCheckpoint(5), model: stageModels.explanations });
       }
 
       // Stage 5: Assemble (Codex) — reads all checkpoint files via tools, verifies snippets
       if (getCurrentStage(generationDir) < 7) {
         const { prompt, checkpoints } = buildAssemblePrompt(query, generationDir, commitHash, generationId, repoId);
-        await runCodex({ prompt, cwd, generationDir, checkpoints, timeoutMs: TIMEOUT_ASSEMBLE, verbose, onCheckpoint: makeOnCheckpoint(6) });
+        await runCodex({ prompt, cwd, generationDir, checkpoints, timeoutMs: TIMEOUT_ASSEMBLE, verbose, onCheckpoint: makeOnCheckpoint(6), model: stageModels.assemble });
       }
     }
   } catch (error) {
@@ -627,6 +682,15 @@ program
   .option('--resume [id]', 'Resume an interrupted story generation. Pass a generation ID (or prefix) to resume, or omit to list resumable stories.')
   .option('--verbose', 'Show the agent reasoning process for debugging')
   .action(async (query, options) => {
+
+    // Load optional config.yaml from the current working directory.
+    let config = {};
+    try {
+      config = loadConfig(process.cwd());
+    } catch (e) {
+      console.error(`Error: ${e.message}`);
+      process.exit(1);
+    }
 
     // Handle --resume mode
     if (options.resume !== undefined) {
@@ -731,6 +795,7 @@ program
           prData: meta.prData,
           verbose: !!options.verbose,
           resume: { generationDir, meta },
+          config,
         });
       } catch (error) {
         console.error(`  Resume failed: ${error.message}`);
@@ -802,6 +867,7 @@ program
         repoId,
         prData,
         verbose: !!options.verbose,
+        config,
       });
     } catch (error) {
       spinner.fail(error.message);
