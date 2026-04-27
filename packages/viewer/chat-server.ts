@@ -1,5 +1,6 @@
 import path from 'path'
 import fsPromises from 'fs/promises'
+import { spawn } from 'child_process'
 import type { Connect } from 'vite'
 import type { ServerResponse } from 'http'
 import { isSafeId, readBody, buildChatPrompt, withFileLock } from './chat-utils'
@@ -37,20 +38,22 @@ async function loadConfigModel(): Promise<string> {
   }
 }
 
-export async function runCodex(prompt: string): Promise<string> {
-  const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) {
-    throw new Error('ANTHROPIC_API_KEY environment variable not set')
-  }
+function isClaudeModel(model: string): boolean {
+  return model.startsWith('claude-')
+}
 
-  const chatModel = await loadConfigModel()
-  console.log('[chat] using model:', chatModel)
+function runClaudeChat(prompt: string, model: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const apiKey = process.env.ANTHROPIC_API_KEY
+    if (!apiKey) {
+      reject(new Error('ANTHROPIC_API_KEY environment variable not set'))
+      return
+    }
 
-  const client = new Anthropic({ apiKey })
+    const client = new Anthropic({ apiKey })
 
-  try {
-    const message = await client.messages.create({
-      model: chatModel,
+    client.messages.create({
+      model,
       max_tokens: 4096,
       messages: [
         {
@@ -59,17 +62,88 @@ export async function runCodex(prompt: string): Promise<string> {
         },
       ],
     })
+      .then(message => {
+        if (message.content[0]?.type === 'text') {
+          console.log('[chat] claude responded, length:', message.content[0].text.length)
+          resolve(message.content[0].text)
+        } else {
+          reject(new Error('Unexpected response format from Claude'))
+        }
+      })
+      .catch(reject)
+  })
+}
 
-    if (message.content[0]?.type === 'text') {
-      console.log('[chat] claude responded, length:', message.content[0].text.length)
-      return message.content[0].text
-    } else {
-      throw new Error('Unexpected response format from Claude')
+function runCodexChat(prompt: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let settled = false
+    const done = (err: Error | null, result?: string) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      if (err) reject(err)
+      else resolve(result!)
     }
-  } catch (err) {
-    const errorMessage = err instanceof Error ? err.message : String(err)
-    console.error('[chat] claude error:', errorMessage)
-    throw err
+
+    const proc = spawn('codex', ['exec', '--full-auto', '-'], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      cwd: storiesDir,
+    })
+    console.log('[chat] codex process pid:', proc.pid)
+
+    const maxBuffer = 1024 * 1024
+    let stdout = ''
+    let stderr = ''
+
+    // Timeout after 120 seconds
+    const timer = setTimeout(() => {
+      proc.kill('SIGTERM')
+      done(new Error('Codex timed out after 120 seconds'))
+    }, 120000)
+
+    proc.stdout.on('data', (data: Buffer) => {
+      stdout += data.toString()
+      if (stdout.length > maxBuffer) {
+        proc.kill('SIGTERM')
+        done(new Error('Codex output exceeded max buffer size'))
+      }
+    })
+
+    proc.stderr.on('data', (data: Buffer) => {
+      if (stderr.length < maxBuffer) stderr += data.toString()
+    })
+
+    proc.on('close', (code) => {
+      if (code === 0) {
+        console.log('[chat] codex responded, length:', stdout.length)
+        done(null, stdout.trim())
+      } else {
+        console.error('[chat] codex spawn error:', { code, stderr })
+        done(new Error(stderr || `Codex exited with code ${code}`))
+      }
+    })
+
+    proc.on('error', (err) => {
+      console.error('[chat] codex spawn error:', err.message)
+      done(new Error(err.message))
+    })
+
+    proc.stdin.on('error', (err) => {
+      console.error('[chat] stdin write error:', err.message)
+    })
+    proc.stdin.write(prompt)
+    proc.stdin.end()
+  })
+}
+
+export async function runCodex(prompt: string): Promise<string> {
+  const chatModel = await loadConfigModel()
+  console.log('[chat] using model:', chatModel)
+
+  if (isClaudeModel(chatModel)) {
+    return runClaudeChat(prompt, chatModel)
+  } else {
+    return runCodexChat(prompt)
   }
 }
 
