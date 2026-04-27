@@ -78,7 +78,7 @@ models:
   explore: codex-mini-latest        # Stage 1: codebase exploration
   snippets: codex-mini-latest       # Stage 3: snippet selection
   assemble: codex-mini-latest       # Stage 5: final assembly
-  pr: codex-mini-latest             # PR review mode
+  pr: codex-mini-latest             # Optional override for all PR-mode stages
 
   # Claude stages
   outline: claude-sonnet-4-5        # Stage 2: chapter outline planning
@@ -100,6 +100,9 @@ The CLI uses a 5-stage dual-model pipeline:
 | 3. Snippets | Codex | Selects exact code line ranges for each chapter |
 | 4. Explanations | Claude | Writes prose for each chapter (60–300 words each) |
 | 5. Assemble | Codex | Quality-checks constraints and outputs the final JSON |
+
+PR/MR review mode uses the same 5-stage pipeline and runner interleaving, with
+PR-specific stage prompts and schema extensions.
 
 Each stage produces checkpointed intermediate files in `stories/.tmp/<id>/`.
 On success these are cleaned up. On failure they're preserved so you can resume

@@ -5,7 +5,7 @@
 // description: what to write (e.g. "Write your notes")
 // filePath: absolute path to the output file
 // marker: the sentinel string that must appear at the end of the file
-function cp(description, filePath, marker) {
+export function formatCheckpointInstruction(description, filePath, marker) {
   return `**Checkpoint:** ${description} to \`${filePath}\`.\nEnd the file with the line: ${marker}`;
 }
 
@@ -33,7 +33,7 @@ const JSON_SCHEMA = `{
   ]
 }`;
 
-const NARRATOR_PREAMBLE = `You are an expert code narrator. Your job is to help create a "code story" — a guided,
+export const NARRATOR_PREAMBLE = `You are an expert code narrator. Your job is to help create a "code story" — a guided,
 chapter-by-chapter tour of a codebase that reads like a friendly colleague walking
 someone through the code. The aim is not just to communicate information, but insights.`;
 
@@ -61,12 +61,12 @@ If a checkpoint file already exists with the expected marker, skip that step.
 ### Step 1.1: Scan the file tree
 Use Glob to discover the project structure and identify files relevant to the query.
 
-${cp('Write your list of relevant files', `${generationDir}/exploration_scan.md`, 'EXPLORATION_SCANNED')}
+${formatCheckpointInstruction('Write your list of relevant files', `${generationDir}/exploration_scan.md`, 'EXPLORATION_SCANNED')}
 
 ### Step 1.2: Read key files
 Read the important source files. Take notes on entry points and control flow.
 
-${cp('Write your notes', `${generationDir}/exploration_read.md`, 'EXPLORATION_READ')}
+${formatCheckpointInstruction('Write your notes', `${generationDir}/exploration_read.md`, 'EXPLORATION_READ')}
 
 ### Step 1.3: Document findings
 Synthesize your understanding into comprehensive notes covering:
@@ -81,7 +81,7 @@ Synthesize your understanding into comprehensive notes covering:
 - Important scope boundaries: what this story can explain directly from code, and what
   is only implied or intentionally out of scope
 
-${cp('Write your full exploration notes', `${generationDir}/exploration_notes.md`, 'STAGE_1_COMPLETE')}`,
+${formatCheckpointInstruction('Write your full exploration notes', `${generationDir}/exploration_notes.md`, 'STAGE_1_COMPLETE')}`,
   };
 }
 
@@ -168,7 +168,7 @@ Before finalizing, verify your outline against this checklist and revise if need
 14. **Scope coverage**: Where will the story say what it is NOT covering, or what is
     only implied rather than directly shown?
 
-${cp('Write your verified outline', `${generationDir}/narrative_outline.md`, 'STAGE_2_COMPLETE')}`,
+${formatCheckpointInstruction('Write your verified outline', `${generationDir}/narrative_outline.md`, 'STAGE_2_COMPLETE')}`,
   };
 }
 
@@ -227,7 +227,7 @@ For each chapter, document:
 - Each snippet: filePath, startLine, endLine
 - Read the actual source files and verify the code content at those line ranges
 
-${cp('Write your snippet selections', `${generationDir}/snippets_mapping.md`, 'STAGE_3_COMPLETE')}`,
+${formatCheckpointInstruction('Write your snippet selections', `${generationDir}/snippets_mapping.md`, 'STAGE_3_COMPLETE')}`,
   };
 }
 
@@ -330,7 +330,7 @@ Guidelines:
 - Stories should be comprehensive and self-contained — explain concepts so the reader
   doesn't need to look things up elsewhere
 
-${cp('Write your draft explanations', `${generationDir}/explanations_draft.md`, 'STAGE_4_COMPLETE')}`,
+${formatCheckpointInstruction('Write your draft explanations', `${generationDir}/explanations_draft.md`, 'STAGE_4_COMPLETE')}`,
   };
 }
 

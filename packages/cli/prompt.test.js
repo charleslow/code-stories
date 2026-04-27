@@ -1,7 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildOutlinePrompt, buildExplanationsPrompt, buildAssemblePrompt } from './prompt.js';
-import { buildPRPrompt } from './prompt-pr.js';
+import {
+  preparePRPipelineContext,
+  buildPRExplorePrompt,
+  buildPROutlinePrompt,
+  buildPRExplanationsPrompt,
+  buildPRAssemblePrompt,
+} from './prompt-pr.js';
 
 test('buildOutlinePrompt includes follow-up coverage guidance', () => {
   const { prompt } = buildOutlinePrompt(
@@ -42,36 +48,35 @@ test('buildAssemblePrompt includes follow-up resistance and grounding checks', (
   assert.match(prompt, /where exactly\?.*"what happens next\?".*"what happens if this fails\?"/i);
 });
 
-test('buildPRPrompt includes grounding guidance for newcomer questions', () => {
-  const { prompt } = buildPRPrompt(
-    'Review this PR',
-    '/tmp/code-stories-test',
-    'deadbeef',
-    'story-456',
-    'owner/repo',
-    {
-      metadata: {
-        number: 42,
-        title: 'Improve retries',
-        description: 'Adds retry handling',
-        baseBranch: 'main',
-        headBranch: 'feature/retries',
-        author: 'alice',
-        url: 'https://github.com/owner/repo/pull/42',
-        labels: ['enhancement'],
-        comments: [],
-        linkedIssues: [],
-      },
-      diff: [],
-      rawDiff: '',
+test('PR pipeline prompts include grounding guidance across stages', () => {
+  const generationDir = '/tmp/code-stories-test';
+  const prData = {
+    metadata: {
+      number: 42,
+      title: 'Improve retries',
+      description: 'Adds retry handling',
+      baseBranch: 'main',
+      headBranch: 'feature/retries',
+      author: 'alice',
+      url: 'https://github.com/owner/repo/pull/42',
+      labels: ['enhancement'],
+      comments: [],
+      linkedIssues: [],
     },
-  );
+    diff: [],
+    rawDiff: '',
+  };
+  const { prContext } = preparePRPipelineContext(generationDir, prData);
+  const { prompt: explorePrompt } = buildPRExplorePrompt('Review this PR', generationDir, prContext);
+  const { prompt: outlinePrompt } = buildPROutlinePrompt('Review this PR', generationDir, '# Exploration', prContext);
+  const { prompt: explainPrompt } = buildPRExplanationsPrompt('Review this PR', generationDir, '# Exploration', '# Outline', '# Snippets', prContext);
+  const { prompt: assemblePrompt } = buildPRAssemblePrompt('Review this PR', generationDir, 'deadbeef', 'story-456', 'owner/repo', prData, prContext);
 
-  assert.match(prompt, /Unfamiliar terms, APIs, or framework concepts a newcomer will need defined/i);
-  assert.match(prompt, /Important boundaries: which caller, subsystem, process, or layer hands off/i);
-  assert.match(prompt, /Runtime behavior that matters for review:\s+ordering, retries, fallback paths, failure\s+handling, or invariants/i);
-  assert.match(prompt, /what this\s+review story can and cannot conclude/i);
-  assert.match(prompt, /Where will important terms be defined before the reader hits the diff\?/i);
-  assert.match(prompt, /For each snippet-bearing chapter, explain at least TWO of the following/i);
-  assert.match(prompt, /where exactly\?.*"what happens next\?".*"what happens if this fails\?"/i);
+  assert.match(explorePrompt, /Unfamiliar terms, APIs, or framework concepts a newcomer will need defined/i);
+  assert.match(explorePrompt, /Important boundaries: which caller, subsystem, process, or layer hands off/i);
+  assert.match(explorePrompt, /Runtime behavior that matters for review:\s+ordering, retries, fallback paths, failure\s+handling, or invariants/i);
+  assert.match(outlinePrompt, /what this review story[\s\S]*can and cannot conclude/i);
+  assert.match(outlinePrompt, /Where will important terms be defined before the reader hits the diff\?/i);
+  assert.match(explainPrompt, /For each snippet-bearing chapter, explain at least TWO of the following/i);
+  assert.match(assemblePrompt, /where exactly\?.*\"what happens next\?\".*\"what happens if this fails\?\"/i);
 });
