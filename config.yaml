@@ -13,5 +13,9 @@
 # Omit any key to use that CLI's default model.
 
 models:
+  explore: gpt-5.4-mini
+  snippets: gpt-5.4-mini
+  assemble: gpt-5.4
+  pr: gpt-5.4
   outline: claude-opus-4-6
   explanations: claude-sonnet-4-6
