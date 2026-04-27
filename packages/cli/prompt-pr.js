@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { NARRATOR_PREAMBLE, formatCheckpointInstruction } from './prompt.js';
+import { formatCheckpointInstruction, buildStagePrompt } from './prompt.js';
 
 /**
  * Write per-file diffs into a diffs/ subdirectory inside generationDir.
@@ -154,16 +154,11 @@ export function buildPRExplorePrompt(query, generationDir, prContext) {
       { file: 'exploration_read.md', checkpoint: 'EXPLORATION_READ' },
       { file: 'exploration_notes.md', checkpoint: 'STAGE_1_COMPLETE' },
     ],
-    prompt: `${NARRATOR_PREAMBLE}
-
-You are reviewing a pull request and creating a PR review story.
-The user's query is: "${query}"
-
-${prContext}
-
-## Your Task: Stage 1 — Explore the Codebase & Analyze the Diff
-
-Follow these steps in strict order. Write each checkpoint file before moving to the next.
+    prompt: buildStagePrompt({
+      query,
+      stageTitle: 'Stage 1 — Explore the Codebase & Analyze the Diff',
+      modeContext: `You are reviewing a pull request and creating a PR review story.\n\n${prContext}`,
+      body: `Follow these steps in strict order. Write each checkpoint file before moving to the next.
 If a checkpoint file already exists with the expected marker, skip that step.
 
 ### Step 1.1: Analyze the diff
@@ -193,6 +188,7 @@ Synthesize your understanding of:
   it does from the diff alone
 
 ${formatCheckpointInstruction('Write your full exploration notes', `${generationDir}/exploration_notes.md`, 'STAGE_1_COMPLETE')}`,
+    }),
   };
 }
 
@@ -201,16 +197,11 @@ export function buildPROutlinePrompt(query, generationDir, explorationNotes, prC
     checkpoints: [
       { file: 'narrative_outline.md', checkpoint: 'STAGE_2_COMPLETE' },
     ],
-    prompt: `${NARRATOR_PREAMBLE}
-
-You are reviewing a pull request and creating a PR review story.
-The user's query is: "${query}"
-
-${prContext}
-
-## Your Task: Stage 2 — Plan the Chapter Outline
-
-You are receiving a handoff from the PR exploration stage. The synthesized exploration
+    prompt: buildStagePrompt({
+      query,
+      stageTitle: 'Stage 2 — Plan the Chapter Outline',
+      modeContext: `You are reviewing a pull request and creating a PR review story.\n\n${prContext}`,
+      body: `You are receiving a handoff from the PR exploration stage. The synthesized exploration
 notes are embedded below. You may read additional detail from:
 - ${generationDir}/exploration_scan.md
 - ${generationDir}/exploration_read.md
@@ -250,6 +241,7 @@ Before finalizing, verify your outline against this checklist and revise if need
 11. Where does the story state major scope limits or unverifiable assumptions?
 
 ${formatCheckpointInstruction('Write your verified outline', `${generationDir}/narrative_outline.md`, 'STAGE_2_COMPLETE')}`,
+    }),
   };
 }
 
@@ -258,17 +250,10 @@ export function buildPRSnippetsPrompt(generationDir, narrativeOutline, prContext
     checkpoints: [
       { file: 'snippets_mapping.md', checkpoint: 'STAGE_3_COMPLETE' },
     ],
-    prompt: `${NARRATOR_PREAMBLE}
-
-You are reviewing a pull request and creating a PR review story.
-
-${prContext}
-
-${PR_SNIPPET_TYPES}
-
-## Your Task: Stage 3 — Identify Snippets
-
-You are receiving a handoff from the outline stage. The chapter outline is embedded below.
+    prompt: buildStagePrompt({
+      stageTitle: 'Stage 3 — Identify Snippets',
+      modeContext: `You are reviewing a pull request and creating a PR review story.\n\n${prContext}\n\n${PR_SNIPPET_TYPES}`,
+      body: `You are receiving a handoff from the outline stage. The chapter outline is embedded below.
 Read actual source files and diff files to verify exact snippets.
 
 <narrative_outline>
@@ -293,6 +278,7 @@ For each chapter, document:
 - for diff snippets: lines array (oldLineNumber, newLineNumber, type, content)
 
 ${formatCheckpointInstruction('Write your snippet selections', `${generationDir}/snippets_mapping.md`, 'STAGE_3_COMPLETE')}`,
+    }),
   };
 }
 
@@ -301,16 +287,11 @@ export function buildPRExplanationsPrompt(query, generationDir, explorationNotes
     checkpoints: [
       { file: 'explanations_draft.md', checkpoint: 'STAGE_4_COMPLETE' },
     ],
-    prompt: `${NARRATOR_PREAMBLE}
-
-You are reviewing a pull request and creating a PR review story.
-The user's query is: "${query}"
-
-${prContext}
-
-## Your Task: Stage 4 — Craft Explanations
-
-You are receiving a handoff from snippet selection. All context is embedded below.
+    prompt: buildStagePrompt({
+      query,
+      stageTitle: 'Stage 4 — Craft Explanations',
+      modeContext: `You are reviewing a pull request and creating a PR review story.\n\n${prContext}`,
+      body: `You are receiving a handoff from snippet selection. All context is embedded below.
 
 <exploration_notes>
 ${explorationNotes}
@@ -344,6 +325,7 @@ Guidelines:
 - Tone: friendly, thorough reviewer — not adversarial, not rubber-stamping
 
 ${formatCheckpointInstruction('Write your draft explanations', `${generationDir}/explanations_draft.md`, 'STAGE_4_COMPLETE')}`,
+    }),
   };
 }
 
@@ -352,18 +334,11 @@ export function buildPRAssemblePrompt(query, generationDir, commitHash, generati
     checkpoints: [
       { file: 'story.json', checkpoint: null },
     ],
-    prompt: `${NARRATOR_PREAMBLE}
-
-You are reviewing a pull request and creating a PR review story.
-The user's query is: "${query}"
-
-${prContext}
-
-${PR_SNIPPET_TYPES}
-
-## Your Task: Stage 5 — Quality Check & Final Output
-
-Read back all work from generation directory:
+    prompt: buildStagePrompt({
+      query,
+      stageTitle: 'Stage 5 — Quality Check & Final Output',
+      modeContext: `You are reviewing a pull request and creating a PR review story.\n\n${prContext}\n\n${PR_SNIPPET_TYPES}`,
+      body: `Read back all work from generation directory:
 - ${generationDir}/exploration_notes.md
 - ${generationDir}/narrative_outline.md
 - ${generationDir}/snippets_mapping.md
@@ -401,6 +376,7 @@ Output final JSON as a single fenced code block (\`\`\`json ... \`\`\`).
 The JSON must be valid and match the schema exactly.
 
 Write the JSON to: ${generationDir}/story.json`,
+    }),
   };
 }
 

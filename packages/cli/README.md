@@ -78,7 +78,6 @@ models:
   explore: codex-mini-latest        # Stage 1: codebase exploration
   snippets: codex-mini-latest       # Stage 3: snippet selection
   assemble: codex-mini-latest       # Stage 5: final assembly
-  pr: codex-mini-latest             # Optional override for all PR-mode stages
 
   # Claude stages
   outline: claude-sonnet-4-5        # Stage 2: chapter outline planning

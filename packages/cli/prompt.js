@@ -37,6 +37,17 @@ export const NARRATOR_PREAMBLE = `You are an expert code narrator. Your job is t
 chapter-by-chapter tour of a codebase that reads like a friendly colleague walking
 someone through the code. The aim is not just to communicate information, but insights.`;
 
+// Shared prompt constructor used by both normal and PR pipelines to reduce drift.
+export function buildStagePrompt({ query, stageTitle, modeContext = null, body }) {
+  const queryLine = query ? `The user's query is: "${query}"\n\n` : '';
+  const modeBlock = modeContext ? `${modeContext}\n\n` : '';
+  return `${NARRATOR_PREAMBLE}
+
+${queryLine}${modeBlock}## Your Task: ${stageTitle}
+
+${body}`;
+}
+
 // Stage 1: Explore the codebase (runs in Codex)
 export function buildExplorePrompt(query, generationDir) {
   return {
@@ -45,13 +56,10 @@ export function buildExplorePrompt(query, generationDir) {
       { file: 'exploration_read.md', checkpoint: 'EXPLORATION_READ' },
       { file: 'exploration_notes.md', checkpoint: 'STAGE_1_COMPLETE' },
     ],
-    prompt: `${NARRATOR_PREAMBLE}
-
-The user's query is: "${query}"
-
-## Your Task: Stage 1 — Explore the Codebase
-
-Your exploration notes will be handed off to a separate model for outline planning.
+    prompt: buildStagePrompt({
+      query,
+      stageTitle: 'Stage 1 — Explore the Codebase',
+      body: `Your exploration notes will be handed off to a separate model for outline planning.
 Write them as a comprehensive, self-contained briefing — the receiving model has not
 seen the codebase and will rely on your notes as its primary source of understanding.
 
@@ -82,6 +90,7 @@ Synthesize your understanding into comprehensive notes covering:
   is only implied or intentionally out of scope
 
 ${formatCheckpointInstruction('Write your full exploration notes', `${generationDir}/exploration_notes.md`, 'STAGE_1_COMPLETE')}`,
+    }),
   };
 }
 
@@ -91,13 +100,10 @@ export function buildOutlinePrompt(query, generationDir, explorationNotes) {
     checkpoints: [
       { file: 'narrative_outline.md', checkpoint: 'STAGE_2_COMPLETE' },
     ],
-    prompt: `${NARRATOR_PREAMBLE}
-
-The user's query is: "${query}"
-
-## Your Task: Stage 2 — Plan the Chapter Outline
-
-You are receiving a handoff from the codebase exploration stage. The synthesized
+    prompt: buildStagePrompt({
+      query,
+      stageTitle: 'Stage 2 — Plan the Chapter Outline',
+      body: `You are receiving a handoff from the codebase exploration stage. The synthesized
 exploration notes are embedded below. If you need additional depth on specific files
 or code paths, you also have tool access to the raw exploration files:
 - ${generationDir}/exploration_scan.md (full file tree scan)
@@ -169,6 +175,7 @@ Before finalizing, verify your outline against this checklist and revise if need
     only implied rather than directly shown?
 
 ${formatCheckpointInstruction('Write your verified outline', `${generationDir}/narrative_outline.md`, 'STAGE_2_COMPLETE')}`,
+    }),
   };
 }
 
@@ -178,11 +185,9 @@ export function buildSnippetsPrompt(generationDir, narrativeOutline) {
     checkpoints: [
       { file: 'snippets_mapping.md', checkpoint: 'STAGE_3_COMPLETE' },
     ],
-    prompt: `${NARRATOR_PREAMBLE}
-
-## Your Task: Stage 3 — Identify Snippets
-
-You are receiving a handoff from the outline planning stage. The chapter outline is
+    prompt: buildStagePrompt({
+      stageTitle: 'Stage 3 — Identify Snippets',
+      body: `You are receiving a handoff from the outline planning stage. The chapter outline is
 embedded below. Read the actual source files to find and verify exact code snippets
 for each chapter.
 
@@ -228,6 +233,7 @@ For each chapter, document:
 - Read the actual source files and verify the code content at those line ranges
 
 ${formatCheckpointInstruction('Write your snippet selections', `${generationDir}/snippets_mapping.md`, 'STAGE_3_COMPLETE')}`,
+    }),
   };
 }
 
@@ -237,13 +243,10 @@ export function buildExplanationsPrompt(query, generationDir, explorationNotes, 
     checkpoints: [
       { file: 'explanations_draft.md', checkpoint: 'STAGE_4_COMPLETE' },
     ],
-    prompt: `${NARRATOR_PREAMBLE}
-
-The user's query is: "${query}"
-
-## Your Task: Stage 4 — Craft Explanations
-
-You are receiving a handoff from the snippet selection stage. All context from previous
+    prompt: buildStagePrompt({
+      query,
+      stageTitle: 'Stage 4 — Craft Explanations',
+      body: `You are receiving a handoff from the snippet selection stage. All context from previous
 stages is embedded below.
 
 You have full tool access to:
@@ -331,6 +334,7 @@ Guidelines:
   doesn't need to look things up elsewhere
 
 ${formatCheckpointInstruction('Write your draft explanations', `${generationDir}/explanations_draft.md`, 'STAGE_4_COMPLETE')}`,
+    }),
   };
 }
 
@@ -340,13 +344,10 @@ export function buildAssemblePrompt(query, generationDir, commitHash, generation
     checkpoints: [
       { file: 'story.json', checkpoint: null },
     ],
-    prompt: `${NARRATOR_PREAMBLE}
-
-The user's query is: "${query}"
-
-## Your Task: Stage 5 — Quality Check & Final Output
-
-Read back all your work from the generation directory:
+    prompt: buildStagePrompt({
+      query,
+      stageTitle: 'Stage 5 — Quality Check & Final Output',
+      body: `Read back all your work from the generation directory:
 - ${generationDir}/exploration_notes.md (architecture findings)
 - ${generationDir}/narrative_outline.md (chapter outline)
 - ${generationDir}/snippets_mapping.md (selected code snippets)
@@ -388,5 +389,6 @@ Output the final JSON as a single fenced code block (\`\`\`json ... \`\`\`).
 The JSON must be valid and match the schema exactly.
 
 Write the JSON to: ${generationDir}/story.json`,
+    }),
   };
 }

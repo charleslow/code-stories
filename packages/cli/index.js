@@ -57,7 +57,7 @@ function loadConfig(dir) {
     if (typeof models !== 'object' || Array.isArray(models)) {
       throw new Error(`${configPath}: "models" must be a mapping of stage names to model strings`);
     }
-    const validKeys = new Set(['explore', 'outline', 'snippets', 'explanations', 'assemble', 'pr', 'chat']);
+    const validKeys = new Set(['explore', 'outline', 'snippets', 'explanations', 'assemble', 'chat']);
     for (const key of Object.keys(models)) {
       if (!validKeys.has(key)) {
         throw new Error(`${configPath}: unknown model key "${key}". Valid keys: ${[...validKeys].join(', ')}`);
@@ -406,7 +406,7 @@ async function generateStory(query, options = {}) {
     // PR mode is implemented as stage prompt variants over the same execution flow.
     const makeOnCheckpoint = (offset) => (localIdx) => updateSpinner(offset + localIdx);
     const prContext = prData ? preparePRPipelineContext(generationDir, prData) : null;
-    const resolveModel = (stageKey) => stageModels.pr || stageModels[stageKey];
+    const resolveModel = (stageKey) => stageModels[stageKey];
 
     // Stage 1: Explore (Codex)
     if (getCurrentStage(generationDir) < 3) {
