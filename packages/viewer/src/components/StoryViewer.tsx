@@ -8,11 +8,12 @@ interface StoryViewerProps {
   story: Story;
   onBack: () => void;
   chatAvailable?: boolean;
+  chatModel?: string | null;
   displayMode: DisplayMode;
   onDisplayModeChange: (mode: DisplayMode) => void;
 }
 
-export function StoryViewer({ story, onBack, chatAvailable, displayMode, onDisplayModeChange }: StoryViewerProps) {
+export function StoryViewer({ story, onBack, chatAvailable, chatModel, displayMode, onDisplayModeChange }: StoryViewerProps) {
   const [currentChapterIndex, setCurrentChapterIndex] = useState(0);
   const nextDisplayMode = displayMode === 'eink' ? 'normal' : 'eink';
 
@@ -94,6 +95,7 @@ export function StoryViewer({ story, onBack, chatAvailable, displayMode, onDispl
             storyRepo={story.repo}
             storyPR={story.pr}
             chatAvailable={chatAvailable}
+            chatModel={chatModel}
             storyId={story.id}
             displayMode={displayMode}
           />

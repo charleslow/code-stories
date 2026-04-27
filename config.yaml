@@ -10,6 +10,9 @@
 #   outline      Stage 2: plan 5-30 chapters with one teaching point each
 #   explanations Stage 4: write prose explanations (60-300 words per chapter)
 #
+# Viewer chat stage:
+#   chat         Interactive Q&A in the viewer (claude-* uses Claude CLI, others use Codex)
+#
 # Omit any key to use that CLI's default model.
 
 models:
@@ -19,3 +22,4 @@ models:
   pr: gpt-5.4
   outline: claude-opus-4-6
   explanations: claude-sonnet-4-6
+  chat: claude-sonnet-4-6

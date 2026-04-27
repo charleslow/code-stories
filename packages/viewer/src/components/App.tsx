@@ -40,6 +40,7 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [recentStories, setRecentStories] = useState<RecentStory[]>(getRecentStories);
   const [chatAvailable, setChatAvailable] = useState(false);
+  const [chatModel, setChatModel] = useState<string | null>(null);
   const [displayMode, setDisplayMode] = useState<DisplayMode>(getInitialDisplayMode);
 
   useEffect(() => {
@@ -49,7 +50,10 @@ export function App() {
 
   // Check chat availability on mount
   useEffect(() => {
-    checkChatAvailable().then(setChatAvailable);
+    checkChatAvailable().then(({ available, model }) => {
+      setChatAvailable(available);
+      setChatModel(model);
+    });
   }, []);
 
   const loadStory = useCallback(async (url: string) => {
@@ -138,6 +142,7 @@ export function App() {
             story={currentStory}
             onBack={handleBack}
             chatAvailable={chatAvailable}
+            chatModel={chatModel}
             displayMode={displayMode}
             onDisplayModeChange={setDisplayMode}
           />
