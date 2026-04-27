@@ -15,7 +15,8 @@ PR review mode clones the repo, checks out the PR branch, fetches the diff and c
 ## Requirements
 
 - Node.js 18+
-- Codex CLI installed and configured
+- [Codex CLI](https://github.com/openai/codex) (`npm install -g @openai/codex`) — configured with an OpenAI API key
+- [Claude CLI](https://docs.anthropic.com/en/docs/claude-code) (`npm install -g @anthropic-ai/claude-code`) — configured with an Anthropic API key
 - A git repository to analyze
 
 For PR/MR review mode only:

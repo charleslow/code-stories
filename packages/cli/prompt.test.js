@@ -1,10 +1,36 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildPrompt } from './prompt.js';
+import { buildOutlinePrompt, buildExplanationsPrompt, buildAssemblePrompt } from './prompt.js';
 import { buildPRPrompt } from './prompt-pr.js';
 
-test('buildPrompt includes follow-up coverage guidance', () => {
-  const { prompt } = buildPrompt(
+test('buildOutlinePrompt includes follow-up coverage guidance', () => {
+  const { prompt } = buildOutlinePrompt(
+    'How does the request flow work?',
+    '/tmp/code-stories-test',
+    '# Exploration notes\nSome architectural notes here.',
+  );
+
+  assert.match(prompt, /follow-up\s+questions about terminology, exact insertion\s+points, runtime behavior, and design implications/i);
+  assert.match(prompt, /Boundary coverage/i);
+  assert.match(prompt, /Behavior coverage/i);
+  assert.match(prompt, /Scope coverage/i);
+  assert.match(prompt, /what gets handed\s+off, where the boundary lives, and why that boundary exists/i);
+});
+
+test('buildExplanationsPrompt includes grounding guidance for newcomer questions', () => {
+  const { prompt } = buildExplanationsPrompt(
+    'How does the request flow work?',
+    '/tmp/code-stories-test',
+    '# Exploration notes',
+    '# Narrative outline',
+    '# Snippets mapping',
+  );
+
+  assert.match(prompt, /what comes in, what goes out, and who handles it next/i);
+});
+
+test('buildAssemblePrompt includes follow-up resistance and grounding checks', () => {
+  const { prompt } = buildAssemblePrompt(
     'How does the request flow work?',
     '/tmp/code-stories-test',
     'deadbeef',
@@ -12,13 +38,7 @@ test('buildPrompt includes follow-up coverage guidance', () => {
     'owner/repo',
   );
 
-  assert.match(prompt, /follow-up\s+questions about terminology, exact insertion\s+points, runtime behavior, and design implications/i);
-  assert.match(prompt, /Boundary coverage/i);
-  assert.match(prompt, /Behavior coverage/i);
-  assert.match(prompt, /Scope coverage/i);
-  assert.match(prompt, /what comes in, what goes out, and who handles it next/i);
   assert.match(prompt, /states major omissions or scope boundaries/i);
-  assert.match(prompt, /what gets handed\s+off, where the boundary lives, and why that boundary exists/i);
   assert.match(prompt, /where exactly\?.*"what happens next\?".*"what happens if this fails\?"/i);
 });
 
