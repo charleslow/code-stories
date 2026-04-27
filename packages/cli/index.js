@@ -2,13 +2,14 @@
 
 import { program } from 'commander';
 import ora from 'ora';
-import { spawn, execSync, execFileSync } from 'child_process';
+import { execSync, execFileSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 import yaml from 'js-yaml';
-import { getCheckpointStatus, formatMissingCheckpoints } from './checkpoints.js';
+import { getCheckpointStatus } from './checkpoints.js';
+import { runSubprocess } from './runner.js';
 import { buildExplorePrompt, buildOutlinePrompt, buildSnippetsPrompt, buildExplanationsPrompt, buildAssemblePrompt } from './prompt.js';
 import { buildPRPrompt } from './prompt-pr.js';
 import { fetchPRData } from './pr.js';
@@ -180,215 +181,30 @@ const STAGES = [
   { file: 'story.json', checkpoint: null, label: 'Finalizing story' },
 ];
 
-// Check current stage based on files (flat index into STAGES)
 function getCurrentStage(generationDir) {
-  let stage = 0;
-
-  for (let i = 0; i < STAGES.length; i++) {
-    const { file, checkpoint } = STAGES[i];
-    const filePath = path.join(generationDir, file);
-
-    if (!fs.existsSync(filePath)) break;
-
-    if (checkpoint) {
-      const content = fs.readFileSync(filePath, 'utf-8');
-      if (!content.includes(checkpoint)) break;
-    }
-
-    stage = i + 1;
-  }
-
-  return stage;
+  return getCheckpointStatus(generationDir, STAGES).completed;
 }
 
-// Run the Codex subprocess with the given prompt.
-// Polls for checkpoint files and calls onCheckpoint when progress is detected.
 function runCodex({ prompt, cwd, generationDir, checkpoints, timeoutMs, verbose, onCheckpoint, model }) {
-  return new Promise((resolve, reject) => {
-    const args = ['exec'];
-    if (model) args.push('--model', model);
-    args.push('--sandbox', 'danger-full-access', '-C', cwd, '--add-dir', generationDir, '-');
-    const cleanEnv = { ...process.env };
-    delete cleanEnv.CLAUDECODE;
-    delete cleanEnv.CLAUDE_CODE_ENTRYPOINT;
-    delete cleanEnv.CLAUDE_CODE_SESSION;
-
-    const codex = spawn('codex', args, { cwd, env: cleanEnv });
-
-    // Send prompt via stdin
-    codex.stdin.on('error', (err) => {
-      if (err.code !== 'EPIPE') throw err;
-    });
-    let stdout = '';
-    codex.stdout.on('data', (data) => {
-      const chunk = data.toString();
-      stdout += chunk;
-      if (verbose) process.stdout.write(chunk);
-    });
-    codex.stdin.write(prompt);
-    codex.stdin.end();
-
-    let stderr = '';
-    codex.stderr.on('data', (data) => {
-      const chunk = data.toString();
-      stderr += chunk;
-      if (verbose) process.stderr.write(chunk);
-    });
-
-    let settled = false;
-    const settle = (error) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      clearInterval(progressInterval);
-      if (error) reject(error);
-      else resolve();
-    };
-
-    // Poll for checkpoint progress within this stage
-    let lastCompleted = 0;
-    const progressInterval = setInterval(() => {
-      const status = getCheckpointStatus(generationDir, checkpoints);
-      if (status.completed > lastCompleted) {
-        lastCompleted = status.completed;
-        if (onCheckpoint) onCheckpoint(status.completed - 1);
-      }
-    }, 1000);
-
-    // Per-stage timeout
-    const timer = setTimeout(() => {
-      const status = getCheckpointStatus(generationDir, checkpoints);
-      codex.kill('SIGTERM');
-      if (status.complete) {
-        settle();
-      } else {
-        settle(new Error(
-          `Stage timed out after ${timeoutMs / 60_000} minutes` +
-          formatMissingCheckpoints(status)
-        ));
-      }
-    }, timeoutMs);
-
-    codex.on('error', (error) => {
-      if (error.code === 'ENOENT') {
-        settle(new Error(
-          'Codex CLI not found. Install it with: npm install -g @openai/codex\n' +
-          'See: https://github.com/openai/codex'
-        ));
-      } else {
-        settle(new Error(`Failed to spawn Codex CLI: ${error.message}`));
-      }
-    });
-
-    codex.on('close', (code) => {
-      // Verify all checkpoints for this stage are complete
-      const status = getCheckpointStatus(generationDir, checkpoints);
-
-      if (status.complete) {
-        settle();
-      } else {
-        let msg = `Codex stage did not produce expected outputs (exit code: ${code})`;
-        if (model) msg += ` [model: ${model}]`;
-        msg += formatMissingCheckpoints(status);
-        if (stderr) msg += `\nstderr: ${stderr.slice(0, 500)}`;
-        if (stdout) msg += `\nstdout: ${stdout.slice(0, 500)}`;
-        settle(new Error(msg));
-      }
-    });
+  const args = ['exec'];
+  if (model) args.push('--model', model);
+  args.push('--sandbox', 'danger-full-access', '-C', cwd, '--add-dir', generationDir, '-');
+  return runSubprocess('codex', args, {
+    prompt, cwd, generationDir, checkpoints, timeoutMs, verbose, onCheckpoint, model,
+    notFoundMsg: 'Codex CLI not found. Install it with: npm install -g @openai/codex\nSee: https://github.com/openai/codex',
+    stageLabel: 'Codex stage',
   });
 }
 
-// Run Claude CLI subprocess with the given prompt.
-// Same checkpoint polling contract as runCodex.
-// cwd is the repo directory — Claude's working directory, giving it source file access.
-// generationDir is always added via --add-dir for checkpoint + scratch note writes.
+// cwd is the repo directory giving Claude source file access;
+// generationDir is added via --add-dir for checkpoint and scratch-note writes.
 function runClaude({ prompt, cwd, generationDir, checkpoints, timeoutMs, verbose, onCheckpoint, model }) {
-  return new Promise((resolve, reject) => {
-    const args = ['--print', '--dangerously-skip-permissions', '--add-dir', generationDir];
-    if (model) args.push('--model', model);
-    const cleanEnv = { ...process.env };
-    delete cleanEnv.CLAUDECODE;
-    delete cleanEnv.CLAUDE_CODE_ENTRYPOINT;
-    delete cleanEnv.CLAUDE_CODE_SESSION;
-
-    const claude = spawn('claude', args, { cwd, env: cleanEnv });
-
-    claude.stdin.on('error', (err) => {
-      if (err.code !== 'EPIPE') throw err;
-    });
-    let stdout = '';
-    claude.stdout.on('data', (data) => {
-      const chunk = data.toString();
-      stdout += chunk;
-      if (verbose) process.stdout.write(chunk);
-    });
-    claude.stdin.write(prompt);
-    claude.stdin.end();
-
-    let stderr = '';
-    claude.stderr.on('data', (data) => {
-      const chunk = data.toString();
-      stderr += chunk;
-      if (verbose) process.stderr.write(chunk);
-    });
-
-    let settled = false;
-    const settle = (error) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      clearInterval(progressInterval);
-      if (error) reject(error);
-      else resolve();
-    };
-
-    let lastCompleted = 0;
-    const progressInterval = setInterval(() => {
-      const status = getCheckpointStatus(generationDir, checkpoints);
-      if (status.completed > lastCompleted) {
-        lastCompleted = status.completed;
-        if (onCheckpoint) onCheckpoint(status.completed - 1);
-      }
-    }, 1000);
-
-    const timer = setTimeout(() => {
-      const status = getCheckpointStatus(generationDir, checkpoints);
-      claude.kill('SIGTERM');
-      if (status.complete) {
-        settle();
-      } else {
-        settle(new Error(
-          `Stage timed out after ${timeoutMs / 60_000} minutes` +
-          formatMissingCheckpoints(status)
-        ));
-      }
-    }, timeoutMs);
-
-    claude.on('error', (error) => {
-      if (error.code === 'ENOENT') {
-        settle(new Error(
-          'Claude CLI not found. Install it with: npm install -g @anthropic-ai/claude-code\n' +
-          'See: https://docs.anthropic.com/en/docs/claude-code'
-        ));
-      } else {
-        settle(new Error(`Failed to spawn Claude CLI: ${error.message}`));
-      }
-    });
-
-    claude.on('close', (code) => {
-      const status = getCheckpointStatus(generationDir, checkpoints);
-
-      if (status.complete) {
-        settle();
-      } else {
-        let msg = `Claude stage did not produce expected outputs (exit code: ${code})`;
-        if (model) msg += ` [model: ${model}]`;
-        msg += formatMissingCheckpoints(status);
-        if (stderr) msg += `\nstderr: ${stderr.slice(0, 500)}`;
-        if (stdout) msg += `\nstdout: ${stdout.slice(0, 500)}`;
-        settle(new Error(msg));
-      }
-    });
+  const args = ['--print', '--dangerously-skip-permissions', '--add-dir', generationDir];
+  if (model) args.push('--model', model);
+  return runSubprocess('claude', args, {
+    prompt, cwd, generationDir, checkpoints, timeoutMs, verbose, onCheckpoint, model,
+    notFoundMsg: 'Claude CLI not found. Install it with: npm install -g @anthropic-ai/claude-code\nSee: https://docs.anthropic.com/en/docs/claude-code',
+    stageLabel: 'Claude stage',
   });
 }
 
