@@ -3,7 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import yaml from 'js-yaml';
 
-const VALID_MODEL_KEYS = new Set(['explore', 'outline', 'snippets', 'explanations', 'assemble', 'pr', 'chat']);
+const VALID_MODEL_KEYS = new Set(['explore', 'outline', 'snippets', 'explanations', 'assemble', 'chat']);
 const PACKAGE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_CONFIG_PATH = path.join(PACKAGE_DIR, 'config.yaml');
 

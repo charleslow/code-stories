@@ -362,7 +362,7 @@ async function generateStory(query, options = {}) {
     // PR mode is implemented as stage prompt variants over the same execution flow.
     const makeOnCheckpoint = (offset) => (localIdx) => updateSpinner(offset + localIdx);
     const prContext = prData ? preparePRPipelineContext(generationDir, prData) : null;
-    const resolveModel = (stageKey) => stageModels.pr || stageModels[stageKey];
+    const resolveModel = (stageKey) => stageModels[stageKey];
 
     // Stage 1: Explore (Codex)
     if (getCurrentStage(generationDir) < 3) {

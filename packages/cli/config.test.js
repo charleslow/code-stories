@@ -49,5 +49,9 @@ describe('CLI config', () => {
       () => parseModelOverrides('unknown=gpt-5.4'),
       /unknown model key/,
     );
+    assert.throws(
+      () => parseModelOverrides('pr=gpt-5.4'),
+      /unknown model key/,
+    );
   });
 });

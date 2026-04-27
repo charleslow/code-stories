@@ -77,7 +77,6 @@ models:
   explore: codex-mini-latest        # Stage 1: codebase exploration
   snippets: codex-mini-latest       # Stage 3: snippet selection
   assemble: codex-mini-latest       # Stage 5: final assembly
-  pr: codex-mini-latest             # Optional override for all PR-mode stages
 
   # Claude stages
   outline: claude-sonnet-4-5        # Stage 2: chapter outline planning
@@ -91,8 +90,8 @@ code-stories "How does auth work?" --models explore=gpt-5.4,outline=claude-sonne
 ```
 
 Model settings are merged in this order: packaged defaults, then `--models`.
-The CLI does not read `config.yaml` from the current working directory. The `pr`
-key still overrides all PR-mode stages. If a model name is invalid or
+The CLI does not read `config.yaml` from the current working directory. Normal mode
+and PR mode use the same per-stage model keys. If a model name is invalid or
 unavailable, the stage will fail immediately with a clear error that includes the
 model name and the CLI's own diagnostic output.
 
