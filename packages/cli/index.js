@@ -9,7 +9,14 @@ import os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 import yaml from 'js-yaml';
 import { buildExplorePrompt, buildOutlinePrompt, buildSnippetsPrompt, buildExplanationsPrompt, buildAssemblePrompt } from './prompt.js';
-import { buildPRPrompt } from './prompt-pr.js';
+import {
+  preparePRPipelineContext,
+  buildPRExplorePrompt,
+  buildPROutlinePrompt,
+  buildPRSnippetsPrompt,
+  buildPRExplanationsPrompt,
+  buildPRAssemblePrompt,
+} from './prompt-pr.js';
 import { fetchPRData } from './pr.js';
 import { detectPlatform, resolveCli, parseRepoId, getCloneUrl, checkoutMR } from './hosting.js';
 
@@ -157,9 +164,6 @@ function cloneRepoForPR(repo, prNumber, host, cli, spinner) {
 
   return { tempDir, repoId };
 }
-
-// Timeout for PR mode (single monolithic Codex invocation).
-const TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
 // Per-stage timeouts for the dual-model pipeline.
 const TIMEOUT_EXPLORE      = 20 * 60 * 1000;
@@ -524,7 +528,7 @@ function listIncompleteGenerations() {
   return results.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
-// Generate a story by running the full pipeline as a single Codex invocation
+// Generate a story by running the 5-stage dual-model pipeline.
 async function generateStory(query, options = {}) {
   const { cwd = process.cwd(), repoId = null, prData = null, verbose = false, resume = null, config = {} } = options;
   const stageModels = config.models || {};
@@ -589,50 +593,55 @@ async function generateStory(query, options = {}) {
   };
 
   try {
-    if (prData) {
-      // PR mode: monolithic Codex pipeline. local checkpoint index == global index.
-      const { prompt, checkpoints } = buildPRPrompt(query, generationDir, commitHash, generationId, repoId, prData);
-      await runCodex({ prompt, cwd, generationDir, checkpoints, timeoutMs: TIMEOUT_MS, verbose, onCheckpoint: updateSpinner, model: stageModels.pr });
-    } else {
-      // Standard mode: dual-model pipeline.
-      // Codex handles exploration, snippet selection, and final assembly.
-      // Claude handles outline planning and explanation crafting.
-      const makeOnCheckpoint = (offset) => (localIdx) => updateSpinner(offset + localIdx);
+    // Standard and PR modes both use the same 5-stage interleaved pipeline.
+    // PR mode is implemented as stage prompt variants over the same execution flow.
+    const makeOnCheckpoint = (offset) => (localIdx) => updateSpinner(offset + localIdx);
+    const prContext = prData ? preparePRPipelineContext(generationDir, prData) : null;
+    const resolveModel = (stageKey) => stageModels.pr || stageModels[stageKey];
 
-      // Stage 1: Explore (Codex)
-      if (getCurrentStage(generationDir) < 3) {
-        const { prompt, checkpoints } = buildExplorePrompt(query, generationDir);
-        await runCodex({ prompt, cwd, generationDir, checkpoints, timeoutMs: TIMEOUT_EXPLORE, verbose, onCheckpoint: makeOnCheckpoint(0), model: stageModels.explore });
-      }
+    // Stage 1: Explore (Codex)
+    if (getCurrentStage(generationDir) < 3) {
+      const { prompt, checkpoints } = prData
+        ? buildPRExplorePrompt(query, generationDir, prContext.prContext)
+        : buildExplorePrompt(query, generationDir);
+      await runCodex({ prompt, cwd, generationDir, checkpoints, timeoutMs: TIMEOUT_EXPLORE, verbose, onCheckpoint: makeOnCheckpoint(0), model: resolveModel('explore') });
+    }
 
-      // Stage 2: Outline (Claude) — exploration_notes.md embedded as context
-      if (getCurrentStage(generationDir) < 4) {
-        const explorationNotes = fs.readFileSync(path.join(generationDir, 'exploration_notes.md'), 'utf-8');
-        const { prompt, checkpoints } = buildOutlinePrompt(query, generationDir, explorationNotes);
-        await runClaude({ prompt, cwd, generationDir, checkpoints, timeoutMs: TIMEOUT_OUTLINE, verbose, onCheckpoint: makeOnCheckpoint(3), model: stageModels.outline });
-      }
+    // Stage 2: Outline (Claude) — exploration_notes.md embedded as context
+    if (getCurrentStage(generationDir) < 4) {
+      const explorationNotes = fs.readFileSync(path.join(generationDir, 'exploration_notes.md'), 'utf-8');
+      const { prompt, checkpoints } = prData
+        ? buildPROutlinePrompt(query, generationDir, explorationNotes, prContext.prContext)
+        : buildOutlinePrompt(query, generationDir, explorationNotes);
+      await runClaude({ prompt, cwd, generationDir, checkpoints, timeoutMs: TIMEOUT_OUTLINE, verbose, onCheckpoint: makeOnCheckpoint(3), model: resolveModel('outline') });
+    }
 
-      // Stage 3: Snippets (Codex) — narrative_outline.md embedded as context
-      if (getCurrentStage(generationDir) < 5) {
-        const narrativeOutline = fs.readFileSync(path.join(generationDir, 'narrative_outline.md'), 'utf-8');
-        const { prompt, checkpoints } = buildSnippetsPrompt(generationDir, narrativeOutline);
-        await runCodex({ prompt, cwd, generationDir, checkpoints, timeoutMs: TIMEOUT_SNIPPETS, verbose, onCheckpoint: makeOnCheckpoint(4), model: stageModels.snippets });
-      }
+    // Stage 3: Snippets (Codex) — narrative_outline.md embedded as context
+    if (getCurrentStage(generationDir) < 5) {
+      const narrativeOutline = fs.readFileSync(path.join(generationDir, 'narrative_outline.md'), 'utf-8');
+      const { prompt, checkpoints } = prData
+        ? buildPRSnippetsPrompt(generationDir, narrativeOutline, prContext.prContext)
+        : buildSnippetsPrompt(generationDir, narrativeOutline);
+      await runCodex({ prompt, cwd, generationDir, checkpoints, timeoutMs: TIMEOUT_SNIPPETS, verbose, onCheckpoint: makeOnCheckpoint(4), model: resolveModel('snippets') });
+    }
 
-      // Stage 4: Explanations (Claude) — all prior checkpoint files embedded as context
-      if (getCurrentStage(generationDir) < 6) {
-        const explorationNotes = fs.readFileSync(path.join(generationDir, 'exploration_notes.md'), 'utf-8');
-        const narrativeOutline = fs.readFileSync(path.join(generationDir, 'narrative_outline.md'), 'utf-8');
-        const snippetsMapping = fs.readFileSync(path.join(generationDir, 'snippets_mapping.md'), 'utf-8');
-        const { prompt, checkpoints } = buildExplanationsPrompt(query, generationDir, explorationNotes, narrativeOutline, snippetsMapping);
-        await runClaude({ prompt, cwd, generationDir, checkpoints, timeoutMs: TIMEOUT_EXPLANATIONS, verbose, onCheckpoint: makeOnCheckpoint(5), model: stageModels.explanations });
-      }
+    // Stage 4: Explanations (Claude) — all prior checkpoint files embedded as context
+    if (getCurrentStage(generationDir) < 6) {
+      const explorationNotes = fs.readFileSync(path.join(generationDir, 'exploration_notes.md'), 'utf-8');
+      const narrativeOutline = fs.readFileSync(path.join(generationDir, 'narrative_outline.md'), 'utf-8');
+      const snippetsMapping = fs.readFileSync(path.join(generationDir, 'snippets_mapping.md'), 'utf-8');
+      const { prompt, checkpoints } = prData
+        ? buildPRExplanationsPrompt(query, generationDir, explorationNotes, narrativeOutline, snippetsMapping, prContext.prContext)
+        : buildExplanationsPrompt(query, generationDir, explorationNotes, narrativeOutline, snippetsMapping);
+      await runClaude({ prompt, cwd, generationDir, checkpoints, timeoutMs: TIMEOUT_EXPLANATIONS, verbose, onCheckpoint: makeOnCheckpoint(5), model: resolveModel('explanations') });
+    }
 
-      // Stage 5: Assemble (Codex) — reads all checkpoint files via tools, verifies snippets
-      if (getCurrentStage(generationDir) < 7) {
-        const { prompt, checkpoints } = buildAssemblePrompt(query, generationDir, commitHash, generationId, repoId);
-        await runCodex({ prompt, cwd, generationDir, checkpoints, timeoutMs: TIMEOUT_ASSEMBLE, verbose, onCheckpoint: makeOnCheckpoint(6), model: stageModels.assemble });
-      }
+    // Stage 5: Assemble (Codex) — reads all checkpoint files via tools, verifies snippets
+    if (getCurrentStage(generationDir) < 7) {
+      const { prompt, checkpoints } = prData
+        ? buildPRAssemblePrompt(query, generationDir, commitHash, generationId, repoId, prData, prContext.prContext)
+        : buildAssemblePrompt(query, generationDir, commitHash, generationId, repoId);
+      await runCodex({ prompt, cwd, generationDir, checkpoints, timeoutMs: TIMEOUT_ASSEMBLE, verbose, onCheckpoint: makeOnCheckpoint(6), model: resolveModel('assemble') });
     }
   } catch (error) {
     if (spinner) spinner.fail('Generation failed');

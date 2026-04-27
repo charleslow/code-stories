@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { NARRATOR_PREAMBLE, formatCheckpointInstruction } from './prompt.js';
 
 /**
  * Write per-file diffs into a diffs/ subdirectory inside generationDir.
@@ -82,22 +83,17 @@ const PR_JSON_SCHEMA = `{
   ]
 }`;
 
-// Build a single prompt for PR review story generation.
-// Returns { prompt, checkpoints } for a single LLM call.
-export function buildPRPrompt(query, generationDir, commitHash, generationId, repoId, prData) {
+function buildPRContext(generationDir, prData) {
   const { metadata, diff, rawDiff } = prData;
 
-  // Write diffs to files so the agent can grep through them
   const diffsDir = writeDiffFiles(generationDir, diff, rawDiff);
 
-  // Format diff summary for the prompt
   const diffSummary = diff.map(f => {
     const added = f.hunks.reduce((n, h) => n + h.lines.filter(l => l.type === 'added').length, 0);
     const removed = f.hunks.reduce((n, h) => n + h.lines.filter(l => l.type === 'removed').length, 0);
     return `  ${f.path} (+${added} -${removed})`;
   }).join('\n');
 
-  // Format comments
   const commentsSection = metadata.comments.length > 0
     ? metadata.comments.map(c => {
       const location = c.path ? ` (${c.path}${c.line ? `:${c.line}` : ''})` : '';
@@ -105,14 +101,13 @@ export function buildPRPrompt(query, generationDir, commitHash, generationId, re
     }).join('\n')
     : 'No comments.';
 
-  // Format linked issues
   const linkedIssuesSection = metadata.linkedIssues && metadata.linkedIssues.length > 0
     ? metadata.linkedIssues.map(issue =>
       `- #${issue.number}: ${issue.title}\n  ${issue.body || '(no description)'}`
     ).join('\n')
     : '';
 
-  const prContext = `## PR Context
+  return `## PR Context
 
 **PR #${metadata.number}: ${metadata.title}**
 - Author: ${metadata.author}
@@ -136,8 +131,9 @@ Per-file diffs have been written to: ${diffsDir}
 - Each changed file has its own \`.diff\` file (e.g., \`src__utils__foo.js.diff\`)
 - The full combined diff is in \`_full.diff\`
 - Use Grep and Read to explore the diffs as needed — do NOT try to read them all at once for large PRs`;
+}
 
-  const snippetTypes = `## Snippet Types
+const PR_SNIPPET_TYPES = `## Snippet Types
 
 Each snippet has a \`type\` field: either \`"code"\` or \`"diff"\`.
 
@@ -151,63 +147,36 @@ Each snippet has a \`type\` field: either \`"code"\` or \`"diff"\`.
 - Think carefully about which type is best for each segment. Not every snippet needs to be a diff.
 - Don't assume the reader knows the codebase well — provide context generously.`;
 
+export function buildPRExplorePrompt(query, generationDir, prContext) {
   return {
     checkpoints: [
       { file: 'exploration_scan.md', checkpoint: 'EXPLORATION_SCANNED' },
       { file: 'exploration_read.md', checkpoint: 'EXPLORATION_READ' },
       { file: 'exploration_notes.md', checkpoint: 'STAGE_1_COMPLETE' },
-      { file: 'narrative_outline.md', checkpoint: 'STAGE_2_COMPLETE' },
-      { file: 'snippets_mapping.md', checkpoint: 'STAGE_3_COMPLETE' },
-      { file: 'explanations_draft.md', checkpoint: 'STAGE_4_COMPLETE' },
-      { file: 'story.json', checkpoint: null },
     ],
-    prompt: `You are an expert code reviewer and narrator. Your job is to help create a "PR review story" —
-a guided, chapter-by-chapter walkthrough of a pull request that helps reviewers understand what
-changed, why it changed, and what to watch for. The aim is not just to communicate information,
-but to give the reviewer a deep understanding of the changes and their implications.
+    prompt: `${NARRATOR_PREAMBLE}
 
+You are reviewing a pull request and creating a PR review story.
 The user's query is: "${query}"
 
 ${prContext}
 
-${snippetTypes}
+## Your Task: Stage 1 — Explore the Codebase & Analyze the Diff
 
-You will produce a single JSON object matching this schema:
-${PR_JSON_SCHEMA}
-
-Use these fixed values:
-- id: "${generationId}"
-- commitHash: "${commitHash}"
-- repo: ${repoId ? `"${repoId}"` : "null"}
-- createdAt: current ISO 8601 timestamp
-- query: "${query}"
-- pr: populate with the PR metadata provided above
-
-## Instructions
-
-Follow these stages in strict sequential order. After completing each stage, you MUST
-immediately write its checkpoint file to disk before starting any work on the next stage.
-Do not skip ahead, batch file writes, or begin a later stage until the current stage's
-checkpoint file has been written. If a checkpoint file already exists with the expected
-marker, you may skip that stage.
-
----
-
-## Stage 1: Explore the Codebase & Analyze the Diff
+Follow these steps in strict order. Write each checkpoint file before moving to the next.
+If a checkpoint file already exists with the expected marker, skip that step.
 
 ### Step 1.1: Analyze the diff
-Study the diff provided above. Identify the key changes, their scope, and potential concerns.
-Use Glob to discover the project structure around the changed files.
+Study the diff provided above. Identify key changes, scope, and potential concerns.
+Use Glob to discover project structure around changed files.
 
-**Checkpoint:** Write your diff analysis and relevant files to ${generationDir}/exploration_scan.md.
-End the file with the line: EXPLORATION_SCANNED
+${formatCheckpointInstruction('Write your diff analysis and relevant files', `${generationDir}/exploration_scan.md`, 'EXPLORATION_SCANNED')}
 
 ### Step 1.2: Read surrounding context
-Read the changed files AND their surrounding context — callers, dependencies, tests, related
-modules. Understand what the code looked like before and how the changes fit in.
+Read the changed files AND surrounding context — callers, dependencies, tests, related modules.
+Understand what code did before and how changes fit in.
 
-**Checkpoint:** Write your notes to ${generationDir}/exploration_read.md.
-End the file with the line: EXPLORATION_READ
+${formatCheckpointInstruction('Write your notes', `${generationDir}/exploration_read.md`, 'EXPLORATION_READ')}
 
 ### Step 1.3: Document findings and concerns
 Synthesize your understanding of:
@@ -223,37 +192,56 @@ Synthesize your understanding of:
 - Scope boundaries: what the PR obviously does not cover, even if a reader might assume
   it does from the diff alone
 
-**Checkpoint:** Write your full exploration notes to ${generationDir}/exploration_notes.md.
-End the file with the line: STAGE_1_COMPLETE
+${formatCheckpointInstruction('Write your full exploration notes', `${generationDir}/exploration_notes.md`, 'STAGE_1_COMPLETE')}`,
+  };
+}
+
+export function buildPROutlinePrompt(query, generationDir, explorationNotes, prContext) {
+  return {
+    checkpoints: [
+      { file: 'narrative_outline.md', checkpoint: 'STAGE_2_COMPLETE' },
+    ],
+    prompt: `${NARRATOR_PREAMBLE}
+
+You are reviewing a pull request and creating a PR review story.
+The user's query is: "${query}"
+
+${prContext}
+
+## Your Task: Stage 2 — Plan the Chapter Outline
+
+You are receiving a handoff from the PR exploration stage. The synthesized exploration
+notes are embedded below. You may read additional detail from:
+- ${generationDir}/exploration_scan.md
+- ${generationDir}/exploration_read.md
+
+<exploration_notes>
+${explorationNotes}
+</exploration_notes>
 
 ---
 
-## Stage 2: Plan the Outline
-
-Review your exploration notes, then design the chapter outline for the PR review story.
-
-Design 5-20 chapters grouped by logical concern (NOT file-by-file). Each chapter should have
-ONE clear teaching point.
+Design 5-20 chapters grouped by logical concern (NOT file-by-file). Each chapter should
+have ONE clear teaching point.
 
 Guidelines:
 - Start with an overview chapter (no snippets) that orients the reader to the PR's purpose
-- Do NOT just focus on the PR diff — the reader may not know this codebase. Build context
-  BEFORE showing diffs: show existing code/architecture first, then the changes
+- Do NOT just focus on the PR diff — build context BEFORE showing diffs
 - Group related changes together even if they span multiple files
 - Include inline review callouts for concerns, suggestions, and questions
-- End with a summary chapter (no snippets) that consolidates findings and overall assessment
+- End with a summary chapter (no snippets) that consolidates findings and assessment
 - Chapter labels should be 2-4 words (for the sidebar)
-- The overview should define the most important unfamiliar terms and state what this
-  review story can and cannot conclude from the diff plus surrounding code
-- If the PR changes an end-to-end flow, reserve chapters for the boundary crossings so
-  the reader can see what calls into the patch, what leaves it, and what handles it next
+- The overview should define important unfamiliar terms and state what this review story
+  can and cannot conclude from the diff plus surrounding code
+- If the PR changes an end-to-end flow, reserve chapters for boundary crossings so readers
+  can see what calls into the patch, what leaves it, and what handles it next
 
 Before finalizing, verify your outline against this checklist and revise if needed:
 1. Does each chapter have exactly one clear teaching point?
 2. Is context shown BEFORE diffs in each chapter?
-3. Are concerns distributed across relevant chapters (not all lumped at the end)?
+3. Are concerns distributed across relevant chapters?
 4. Could a newcomer unfamiliar with this codebase follow along?
-5. Are there any redundant chapters that could be merged?
+5. Are there redundant chapters that should be merged?
 6. Is the final chapter a prose-only summary with consolidated concerns?
 7. Does the story cover both what changed and why?
 8. Where will important terms be defined before the reader hits the diff?
@@ -261,99 +249,169 @@ Before finalizing, verify your outline against this checklist and revise if need
 10. Which chapters explain a meaningful runtime behavior, edge case, or invariant?
 11. Where does the story state major scope limits or unverifiable assumptions?
 
-**Checkpoint:** Write your verified outline to ${generationDir}/narrative_outline.md.
-End the file with the line: STAGE_2_COMPLETE
+${formatCheckpointInstruction('Write your verified outline', `${generationDir}/narrative_outline.md`, 'STAGE_2_COMPLETE')}`,
+  };
+}
+
+export function buildPRSnippetsPrompt(generationDir, narrativeOutline, prContext) {
+  return {
+    checkpoints: [
+      { file: 'snippets_mapping.md', checkpoint: 'STAGE_3_COMPLETE' },
+    ],
+    prompt: `${NARRATOR_PREAMBLE}
+
+You are reviewing a pull request and creating a PR review story.
+
+${prContext}
+
+${PR_SNIPPET_TYPES}
+
+## Your Task: Stage 3 — Identify Snippets
+
+You are receiving a handoff from the outline stage. The chapter outline is embedded below.
+Read actual source files and diff files to verify exact snippets.
+
+<narrative_outline>
+${narrativeOutline}
+</narrative_outline>
 
 ---
-
-## Stage 3: Identify Snippets
-
-Review your outline, then select the exact code or diff segments to show in each chapter.
 
 Constraints:
 - Each chapter's total code should be 20-70 lines across all snippets. Absolute max 80 lines.
-- Use a mix of \`type: "code"\` and \`type: "diff"\` snippets as appropriate
-- For diff snippets, include the \`lines\` array with accurate line numbers (see Snippet Types above)
-- Show complete logical units when possible
-- The \`content\` field must match the actual source code exactly
-- \`startLine\` and \`endLine\` must be accurate
-- Overview (first) and summary (last) chapters have empty snippets arrays
-- Keep snippet count per chapter to 1-3
+- Use a mix of \`type: "code"\` and \`type: "diff"\` snippets as appropriate.
+- For diff snippets, include the \`lines\` array with accurate line numbers.
+- Show complete logical units when possible.
+- The \`content\` field must match the actual source code exactly.
+- \`startLine\` and \`endLine\` must be accurate.
+- Overview (first) and summary (last) chapters have empty snippets arrays.
+- Keep snippet count per chapter to 1-3.
 
 For each chapter, document:
-- The chapter ID and label
-- Each snippet: filePath, startLine, endLine, type
-- For diff snippets: the lines array with oldLineNumber, newLineNumber, type, content
-- Read the actual source files and verify the code content at those line ranges
+- chapter ID and label
+- each snippet: filePath, startLine, endLine, type
+- for diff snippets: lines array (oldLineNumber, newLineNumber, type, content)
 
-**Checkpoint:** Write your snippet selections to ${generationDir}/snippets_mapping.md.
-End the file with the line: STAGE_3_COMPLETE
+${formatCheckpointInstruction('Write your snippet selections', `${generationDir}/snippets_mapping.md`, 'STAGE_3_COMPLETE')}`,
+  };
+}
+
+export function buildPRExplanationsPrompt(query, generationDir, explorationNotes, narrativeOutline, snippetsMapping, prContext) {
+  return {
+    checkpoints: [
+      { file: 'explanations_draft.md', checkpoint: 'STAGE_4_COMPLETE' },
+    ],
+    prompt: `${NARRATOR_PREAMBLE}
+
+You are reviewing a pull request and creating a PR review story.
+The user's query is: "${query}"
+
+${prContext}
+
+## Your Task: Stage 4 — Craft Explanations
+
+You are receiving a handoff from snippet selection. All context is embedded below.
+
+<exploration_notes>
+${explorationNotes}
+</exploration_notes>
+
+<narrative_outline>
+${narrativeOutline}
+</narrative_outline>
+
+<snippets_mapping>
+${snippetsMapping}
+</snippets_mapping>
 
 ---
-
-## Stage 4: Craft Explanations
-
-Review your outline and snippet selections, then write the explanation for each chapter
-in markdown.
 
 Guidelines:
 - Explanation length MUST vary based on complexity (60-300 words range)
-- Focus on "why" and insight, not just describing what the code does
-- Reference specific lines in the snippets
+- Focus on "why" and insight, not just describing what code does
+- Reference specific lines in snippets
 - Use review-focused callouts in blockquotes:
-  * \`[!CONCERN]\` — potential issues, bugs, or risks (renders red)
-  * \`[!SUGGESTION]\` — improvement ideas or alternatives (renders blue)
-  * \`[!QUESTION]\` — things the reviewer should verify or ask about (renders yellow)
-  * \`[!NOTE]\` — important context or observations (renders default)
-- Explain the intent behind changes, not just what they do
-- For each snippet-bearing chapter, explain at least TWO of the following when the code
-  supports it: the boundary or handoff, the concrete mechanics, the runtime behavior, or
-  the design implication for reviewers
-- Do not assume terms like RPC, reflection, hydration, worker process, transaction, or
-  debounce are self-explanatory. Define unfamiliar terms on first use in plain language.
-- If the patch omits important surrounding machinery, fallback branches, or external
-  guarantees, say so explicitly so the review story does not overclaim completeness
+  * \`[!CONCERN]\` — potential issues, bugs, or risks
+  * \`[!SUGGESTION]\` — improvement ideas or alternatives
+  * \`[!QUESTION]\` — things reviewers should verify
+  * \`[!NOTE]\` — important context or observations
+- Explain intent behind changes, not just what they do
+- For each snippet-bearing chapter, explain at least TWO of the following when code
+  supports it: boundary/handoff, concrete mechanics, runtime behavior, or design implication
+- Define unfamiliar terms on first use in plain language
+- If the patch omits surrounding machinery, fallback branches, or external guarantees,
+  say so explicitly so the review story does not overclaim completeness
 - Tone: friendly, thorough reviewer — not adversarial, not rubber-stamping
 
-**Checkpoint:** Write your draft explanations to ${generationDir}/explanations_draft.md.
-End the file with the line: STAGE_4_COMPLETE
+${formatCheckpointInstruction('Write your draft explanations', `${generationDir}/explanations_draft.md`, 'STAGE_4_COMPLETE')}`,
+  };
+}
 
----
+export function buildPRAssemblePrompt(query, generationDir, commitHash, generationId, repoId, prData, prContext) {
+  return {
+    checkpoints: [
+      { file: 'story.json', checkpoint: null },
+    ],
+    prompt: `${NARRATOR_PREAMBLE}
 
-## Stage 5: Quality Check & Final Output
+You are reviewing a pull request and creating a PR review story.
+The user's query is: "${query}"
 
-Read back all your work:
-- ${generationDir}/exploration_notes.md (findings & concerns)
-- ${generationDir}/narrative_outline.md (chapter outline)
-- ${generationDir}/snippets_mapping.md (selected code snippets)
-- ${generationDir}/explanations_draft.md (draft explanations)
+${prContext}
 
-Assemble the complete story JSON from your work. Before outputting, verify each
-constraint. If any check fails, revise before outputting.
+${PR_SNIPPET_TYPES}
 
-1. **Snippet line cap**: No chapter exceeds 80 total snippet lines.
-2. **Context before diffs**: Each chapter that shows diffs also provides context.
-3. **Diff line validation**: All diff snippets have valid \`lines\` arrays.
-4. **Bookend chapters**: Overview (first) and summary (last) have empty snippets arrays.
-5. **Concern distribution**: Review concerns are spread across relevant chapters.
-6. **PR field populated**: The \`pr\` field contains full PR metadata.
-7. **Query coverage**: The story addresses the user's query.
-8. **Follow-up resistance**: The story defines key terms before using them, names the
-   important handoff boundaries, covers at least one meaningful runtime behavior or
-   invariant where relevant, and states major omissions or scope limits instead of
-   leaving them implicit.
-9. **Grounding check**: In snippet-bearing chapters, the reader can answer at least one
-   concrete "where exactly?", "what happens next?", or "what happens if this fails?"
-   question from the explanation without reopening the diff.
+## Your Task: Stage 5 — Quality Check & Final Output
 
-For each snippet, read the actual source file to verify the content matches exactly
-and the line numbers are accurate. Fix any discrepancies.
+Read back all work from generation directory:
+- ${generationDir}/exploration_notes.md
+- ${generationDir}/narrative_outline.md
+- ${generationDir}/snippets_mapping.md
+- ${generationDir}/explanations_draft.md
+
+Use these fixed values in final JSON:
+- id: "${generationId}"
+- commitHash: "${commitHash}"
+- repo: ${repoId ? `"${repoId}"` : 'null'}
+- query: "${query}"
+- createdAt: current ISO 8601 timestamp
+- pr: populate from PR metadata in the context above
+
+Assemble complete story JSON, then verify constraints before outputting:
+1. Snippet line cap: no chapter exceeds 80 total snippet lines.
+2. Context before diffs: chapters with diff snippets also provide context.
+3. Diff line validation: diff snippets have valid \`lines\` arrays.
+4. Bookend chapters: overview and summary have empty snippets arrays.
+5. Concern distribution: review concerns are spread across relevant chapters.
+6. PR field populated: \`pr\` contains full metadata.
+7. Query coverage: story addresses the user's query.
+8. Follow-up resistance: story defines key terms, names handoff boundaries, covers
+   meaningful runtime behavior where relevant, and states major omissions/scope limits.
+9. Grounding check: snippet-bearing chapters let reader answer at least one
+   "where exactly?", "what happens next?", or "what happens if this fails?" question.
+
+For each snippet, verify source content and line numbers against actual files.
 
 ## Output
 
-Output the final JSON as a single fenced code block (\`\`\`json ... \`\`\`).
+The JSON schema is:
+${PR_JSON_SCHEMA}
+
+Output final JSON as a single fenced code block (\`\`\`json ... \`\`\`).
 The JSON must be valid and match the schema exactly.
 
 Write the JSON to: ${generationDir}/story.json`,
+  };
+}
+
+// Backward-compatible helper for tests and callers that expect a single builder.
+export function buildPRPrompt(query, generationDir, commitHash, generationId, repoId, prData) {
+  const prContext = buildPRContext(generationDir, prData);
+  return buildPRAssemblePrompt(query, generationDir, commitHash, generationId, repoId, prData, prContext);
+}
+
+export function preparePRPipelineContext(generationDir, prData) {
+  return {
+    prContext: buildPRContext(generationDir, prData),
   };
 }
