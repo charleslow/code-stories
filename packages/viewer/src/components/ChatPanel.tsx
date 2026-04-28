@@ -32,6 +32,9 @@ export default function ChatPanel({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const prevMessagesLenRef = useRef(0);
+  // Always reflects the current chapterId so async handlers can detect navigation
+  const chapterIdRef = useRef(chapterId);
+  chapterIdRef.current = chapterId;
 
   // Track whether chat panel is in the viewport
   useEffect(() => {
@@ -44,6 +47,12 @@ export default function ChatPanel({
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
+
+  // Reset in-flight UI state when the user navigates to a different chapter
+  useEffect(() => {
+    setLoading(false);
+    setError(null);
+  }, [chapterId]);
 
   // Load chat history when chapter changes
   useEffect(() => {
@@ -77,6 +86,9 @@ export default function ChatPanel({
     const trimmed = input.trim();
     if (!trimmed || loading) return;
 
+    // Capture at send time so the response always lands in the originating chapter
+    const sentChapterId = chapterId;
+
     setInput('');
     setError(null);
     setLoading(true);
@@ -89,17 +101,18 @@ export default function ChatPanel({
     setMessages(prev => [...prev, userMsg]);
 
     try {
-      const reply = await sendChatMessage(storyId, chapterId, trimmed);
-      const assistantMsg: ChatMessage = {
-        role: 'assistant',
-        content: reply,
-        timestamp: new Date().toISOString(),
-      };
-      setMessages(prev => [...prev, assistantMsg]);
+      await sendChatMessage(storyId, sentChapterId, trimmed);
+      // Reply is already saved server-side; refresh history to display it.
+      // If the user navigated away, skip — history will reload when they return.
+      if (chapterIdRef.current !== sentChapterId) return;
+      setHistoryLoaded(null);
     } catch (err) {
+      if (chapterIdRef.current !== sentChapterId) return;
       setError(err instanceof Error ? err.message : 'Failed to get response');
     } finally {
-      setLoading(false);
+      if (chapterIdRef.current === sentChapterId) {
+        setLoading(false);
+      }
     }
   }, [input, loading, storyId, chapterId]);
 
