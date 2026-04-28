@@ -917,6 +917,44 @@ body {
 }
 
 /* ================================================
+   CHAPTER SLUG
+   ================================================ */
+.chapter-slug {
+  max-width: 65ch;
+  margin-bottom: 2rem;
+  padding: 1rem 1.25rem;
+  border-left: 3px solid var(--accent-strong);
+  background: var(--accent-surface);
+  border-radius: 0 var(--radius-secondary) var(--radius-secondary) 0;
+}
+
+.chapter-slug-text {
+  font-family: var(--font-sans);
+  font-size: 1.0625rem;
+  font-style: italic;
+  font-weight: 500;
+  line-height: 1.55;
+  letter-spacing: -0.005em;
+  margin: 0;
+  background: linear-gradient(105deg, var(--accent-pink) 0%, #F5A8C4 55%, #E8EFF8 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+:root[data-display-mode='eink'] .chapter-slug {
+  border-left-color: var(--text-primary);
+  background: var(--bg-elevated);
+}
+
+:root[data-display-mode='eink'] .chapter-slug-text {
+  background: none;
+  -webkit-text-fill-color: var(--text-primary);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* ================================================
    CALLOUT BLOCKS
    ================================================ */
 .callout {

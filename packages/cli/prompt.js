@@ -20,6 +20,7 @@ const JSON_SCHEMA = `{
     {
       "id": "string (e.g., chapter-0)",
       "label": "string (2-4 words for sidebar)",
+      "slug": "string (10-15 words orienting the reader to what this chapter covers)",
       "snippets": [
         {
           "filePath": "string (relative path)",
@@ -129,6 +130,12 @@ Guidelines:
 - Build from foundations to synthesis: show building blocks before compositions
 - End with a summary chapter (no code snippets) that provides closure to the story
 - Chapter labels should be 2-4 words (for the sidebar)
+- Each chapter should also have a slug: a single sentence of 10-15 words that immediately orients
+  the reader to what this chapter reveals. The slug is displayed prominently at the start of the
+  chapter to bridge the conceptual jump from the previous chapter. Write it as an active, engaging
+  statement — not a heading, but a sentence that makes the reader feel grounded (e.g. "The tokenizer
+  converts raw text into integer IDs that the model can actually process." or "Before any training
+  begins, the optimizer and learning rate schedule are configured in a single setup step.")
 - If the story naturally divides into distinct phases or subsystems (e.g., a basic
   mechanism and then an advanced variant), introduce the transition between phases
   explicitly. Include a brief bridge in the preceding chapter's explanation that
@@ -376,6 +383,9 @@ constraint. If any check fails, revise before outputting.
 9. **Grounding check**: In snippet-bearing chapters, the reader can answer at least one
    concrete "where exactly?", "what happens next?", or "what happens if this fails?"
    question from the explanation without opening another file.
+10. **Slug check**: Every chapter has a slug of 10-15 words that reads as an active,
+    grounding sentence — not a heading or label rephrasing. Each slug should stand alone
+    and make sense without reading the chapter label.
 
 For each snippet, read the actual source file to verify the content matches exactly
 and the line numbers are accurate. Fix any discrepancies.

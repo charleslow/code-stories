@@ -134,6 +134,7 @@ export function ChapterDisplay({ chapter, currentIndex, totalChapters, onPrev, o
           <div style={isMobile ? { flex: '1 1 100%', display: 'flex', flexDirection: 'column', overflowY: 'auto' } : { flex: `0 0 ${100 - codePanelPercent}%`, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
             <ExplanationPanel
               explanation={chapter.explanation}
+              slug={chapter.slug}
             />
             {chatAvailable && storyId && !isMobile && (
               <ChatPanel storyId={storyId} chapterId={chapter.id} chatModel={chatModel} />

@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 
 interface ExplanationPanelProps {
   explanation: string;
+  slug?: string;
 }
 
 function parseCalloutTitle(children: ReactNode): { title: string | null; content: ReactNode } {
@@ -72,9 +73,14 @@ const markdownComponents: Components = {
   }
 };
 
-export function ExplanationPanel({ explanation }: ExplanationPanelProps) {
+export function ExplanationPanel({ explanation, slug }: ExplanationPanelProps) {
   return (
     <div className="explanation-panel">
+      {slug && (
+        <div className="chapter-slug">
+          <p className="chapter-slug-text">{slug}</p>
+        </div>
+      )}
       <ReactMarkdown components={markdownComponents}>{explanation}</ReactMarkdown>
     </div>
   );

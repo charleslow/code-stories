@@ -61,6 +61,7 @@ const PR_JSON_SCHEMA = `{
     {
       "id": "string (e.g., chapter-0)",
       "label": "string (2-4 words for sidebar)",
+      "slug": "string (10-15 words orienting the reader to what this chapter covers)",
       "snippets": [
         {
           "filePath": "string (relative path)",
@@ -222,6 +223,11 @@ Guidelines:
 - Include inline review callouts for concerns, suggestions, and questions
 - End with a summary chapter (no snippets) that consolidates findings and assessment
 - Chapter labels should be 2-4 words (for the sidebar)
+- Each chapter should also have a slug: a single sentence of 10-15 words that immediately orients
+  the reader to what this chapter reveals. Write it as an active, grounding statement — not a
+  heading, but a sentence that makes the reader feel placed (e.g. "The middleware layer intercepts
+  every request before it reaches the route handler." or "This chapter shows how the patch wires
+  the new retry logic into the existing error boundary.")
 - The overview should define important unfamiliar terms and state what this review story
   can and cannot conclude from the diff plus surrounding code
 - If the PR changes an end-to-end flow, reserve chapters for boundary crossings so readers
@@ -364,6 +370,8 @@ Assemble complete story JSON, then verify constraints before outputting:
    meaningful runtime behavior where relevant, and states major omissions/scope limits.
 9. Grounding check: snippet-bearing chapters let reader answer at least one
    "where exactly?", "what happens next?", or "what happens if this fails?" question.
+10. Slug check: every chapter has a slug of 10-15 words that reads as an active,
+    grounding sentence — not a heading or label rephrasing.
 
 For each snippet, verify source content and line numbers against actual files.
 
