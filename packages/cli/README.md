@@ -81,6 +81,7 @@ models:
   # Claude stages
   outline: claude-sonnet-4-5        # Stage 2: chapter outline planning
   explanations: claude-opus-4-7     # Stage 4: prose explanations
+  chat: gpt-5.4                     # Viewer chat model
 ```
 
 Override models for a single run with `--models`:
