@@ -101,16 +101,11 @@ export default function ChatPanel({
     setMessages(prev => [...prev, userMsg]);
 
     try {
-      const reply = await sendChatMessage(storyId, sentChapterId, trimmed);
-      // If the user navigated away while waiting, discard — the reply is already
-      // saved server-side and will appear when they return to this chapter.
+      await sendChatMessage(storyId, sentChapterId, trimmed);
+      // Reply is already saved server-side; refresh history to display it.
+      // If the user navigated away, skip — history will reload when they return.
       if (chapterIdRef.current !== sentChapterId) return;
-      const assistantMsg: ChatMessage = {
-        role: 'assistant',
-        content: reply,
-        timestamp: new Date().toISOString(),
-      };
-      setMessages(prev => [...prev, assistantMsg]);
+      setHistoryLoaded(null);
     } catch (err) {
       if (chapterIdRef.current !== sentChapterId) return;
       setError(err instanceof Error ? err.message : 'Failed to get response');
