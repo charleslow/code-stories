@@ -41,6 +41,7 @@ export interface Story {
 export interface Chapter {
   id: string;
   label: string;
+  slug?: string;
   snippets: CodeSnippet[];
   explanation: string;
 }
