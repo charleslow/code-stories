@@ -8,4 +8,4 @@ models:
   assemble: gpt-5.4
   outline: claude-sonnet-4-6
   explanations: claude-sonnet-4-6
-  chat: claude-sonnet-4-6
+  chat: gpt-5.4

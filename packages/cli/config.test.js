@@ -13,6 +13,7 @@ describe('CLI config', () => {
 
     assert.equal(config.models.explore, 'gpt-5.4-mini');
     assert.equal(config.models.outline, 'claude-sonnet-4-6');
+    assert.equal(config.models.chat, 'gpt-5.4');
   });
 
   it('merges configs with later model values taking precedence', () => {
