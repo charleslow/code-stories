@@ -919,39 +919,55 @@ body {
 /* ================================================
    CHAPTER SLUG
    ================================================ */
+
+/*
+  Two font-stack options — swap var(--font-sans) below for either:
+  Whitepaper (refined sans): 'DM Sans', 'Source Sans 3', 'Inter', sans-serif
+  Technical  (editorial mono): 'JetBrains Mono', 'Space Mono', monospace
+*/
+
 .chapter-slug {
   max-width: 65ch;
-  margin-bottom: 2rem;
-  padding: 1rem 1.25rem;
-  border-left: 3px solid var(--accent-strong);
-  background: var(--accent-surface);
-  border-radius: 0 var(--radius-secondary) var(--radius-secondary) 0;
+  margin-bottom: 2.5rem;
+  padding: 0;
+}
+
+.chapter-slug::before,
+.chapter-slug::after {
+  content: '';
+  display: block;
+  width: 35%;
+  height: 1px;
+  background: rgba(154, 149, 173, 0.22);
+}
+
+.chapter-slug::before {
+  margin-bottom: 0.875rem;
+}
+
+.chapter-slug::after {
+  margin-top: 0.875rem;
 }
 
 .chapter-slug-text {
   font-family: var(--font-sans);
   font-size: 1.0625rem;
-  font-style: italic;
-  font-weight: 500;
-  line-height: 1.55;
-  letter-spacing: -0.005em;
+  font-style: normal;
+  font-weight: 400;
+  line-height: 1.65;
+  letter-spacing: 0.008em;
   margin: 0;
-  background: linear-gradient(105deg, var(--accent-pink) 0%, #F5A8C4 55%, #E8EFF8 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: #9A95AD;
 }
 
-:root[data-display-mode='eink'] .chapter-slug {
-  border-left-color: var(--text-primary);
-  background: var(--bg-elevated);
+:root[data-display-mode='eink'] .chapter-slug::before,
+:root[data-display-mode='eink'] .chapter-slug::after {
+  background: rgba(0, 0, 0, 0.18);
 }
 
 :root[data-display-mode='eink'] .chapter-slug-text {
-  background: none;
-  -webkit-text-fill-color: var(--text-primary);
-  color: var(--text-primary);
-  font-weight: 600;
+  color: #5A5870;
+  font-weight: 400;
 }
 
 /* ================================================
