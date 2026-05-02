@@ -928,7 +928,7 @@ body {
 
 .chapter-slug {
   max-width: 65ch;
-  margin-bottom: 2.5rem;
+  margin-bottom: 3rem;
   padding: 0;
 }
 
@@ -951,13 +951,13 @@ body {
 
 .chapter-slug-text {
   font-family: var(--font-sans);
-  font-size: 1.0625rem;
+  font-size: 1.25rem;
   font-style: normal;
-  font-weight: 400;
-  line-height: 1.65;
+  font-weight: 500;
+  line-height: 1.6;
   letter-spacing: 0.008em;
   margin: 0;
-  color: #9A95AD;
+  color: #C8A0AA;
 }
 
 :root[data-display-mode='eink'] .chapter-slug::before,
@@ -966,8 +966,8 @@ body {
 }
 
 :root[data-display-mode='eink'] .chapter-slug-text {
-  color: #5A5870;
-  font-weight: 400;
+  color: #7A5A60;
+  font-weight: 500;
 }
 
 /* ================================================
