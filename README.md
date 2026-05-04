@@ -17,11 +17,12 @@ PR review mode clones the repo, checks out the PR branch, fetches the diff and c
 - Node.js 18+
 - [Codex CLI](https://github.com/openai/codex) (`npm install -g @openai/codex`) — configured with an OpenAI API key
 - [Claude CLI](https://docs.anthropic.com/en/docs/claude-code) (`npm install -g @anthropic-ai/claude-code`) — configured with an Anthropic API key
-- A git repository to analyze
+- A directory of source files to analyze. Normal story generation does not require the directory itself to be a git repository.
 
 For PR/MR review mode only:
 - [GitHub CLI](https://cli.github.com/) (`gh`) — for GitHub PRs
 - [GitLab CLI](https://gitlab.com/gitlab-org/cli) (`glab`) — for GitLab MRs
+- A git repository or `--repo` argument
 
 The CLI auto-detects whether a repo is on GitHub or GitLab (including self-hosted instances and GitLab Dedicated) and uses the appropriate tool.
 
@@ -30,7 +31,7 @@ The CLI auto-detects whether a repo is on GitHub or GitLab (including self-hoste
 ### Generate a Story (CLI)
 
 ```bash
-# Navigate to any git repo and ask a question
+# Navigate to any code directory and ask a question
 cd my-project
 npx code-stories "How does the authentication flow work?"
 
