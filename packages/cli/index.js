@@ -2,7 +2,7 @@
 
 import { program } from 'commander';
 import ora from 'ora';
-import { execSync, execFileSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -10,6 +10,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { loadDefaultConfig, mergeConfigs, parseModelOverrides } from './config.js';
 import { getCheckpointStatus } from './checkpoints.js';
 import { runSubprocess } from './runner.js';
+import { buildClaudePrintArgs } from './claude.js';
+import { buildCodexExecArgs } from './codex.js';
 import { buildExplorePrompt, buildOutlinePrompt, buildSnippetsPrompt, buildExplanationsPrompt, buildAssemblePrompt } from './prompt.js';
 import {
   preparePRPipelineContext,
@@ -49,10 +51,26 @@ function ensureDirectories() {
   }
 }
 
-// Get current commit hash
+// Get current commit hash. Normal story generation can run outside git repos;
+// in that case stories use "unknown" as the commit marker.
 function getCommitHash(cwd = process.cwd()) {
   try {
-    return execSync('git rev-parse HEAD', { cwd, encoding: 'utf-8' }).trim();
+    const isGitRepo = execFileSync('git', ['rev-parse', '--is-inside-work-tree'], {
+      cwd,
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim();
+    if (isGitRepo !== 'true') return 'unknown';
+  } catch {
+    return 'unknown';
+  }
+
+  try {
+    return execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd,
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim();
   } catch (e) {
     console.warn('Failed to get commit hash:', e.message);
     return 'unknown';
@@ -148,9 +166,7 @@ function getCurrentStage(generationDir) {
 }
 
 function runCodex({ prompt, cwd, generationDir, checkpoints, timeoutMs, verbose, onCheckpoint, model }) {
-  const args = ['exec'];
-  if (model) args.push('--model', model);
-  args.push('--sandbox', 'danger-full-access', '-C', cwd, '--add-dir', generationDir, '-');
+  const args = buildCodexExecArgs({ model, cwd, generationDir });
   return runSubprocess('codex', args, {
     prompt, cwd, generationDir, checkpoints, timeoutMs, verbose, onCheckpoint, model,
     notFoundMsg: 'Codex CLI not found. Install it with: npm install -g @openai/codex\nSee: https://github.com/openai/codex',
@@ -161,8 +177,7 @@ function runCodex({ prompt, cwd, generationDir, checkpoints, timeoutMs, verbose,
 // cwd is the repo directory giving Claude source file access;
 // generationDir is added via --add-dir for checkpoint and scratch-note writes.
 function runClaude({ prompt, cwd, generationDir, checkpoints, timeoutMs, verbose, onCheckpoint, model }) {
-  const args = ['--print', '--dangerously-skip-permissions', '--add-dir', generationDir];
-  if (model) args.push('--model', model);
+  const args = buildClaudePrintArgs({ model, generationDir });
   return runSubprocess('claude', args, {
     prompt, cwd, generationDir, checkpoints, timeoutMs, verbose, onCheckpoint, model,
     notFoundMsg: 'Claude CLI not found. Install it with: npm install -g @anthropic-ai/claude-code\nSee: https://docs.anthropic.com/en/docs/claude-code',

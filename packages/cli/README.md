@@ -18,16 +18,17 @@ npm install -g code-stories
 - Node.js 18+
 - [Codex CLI](https://github.com/openai/codex) (`npm install -g @openai/codex`) — configured with an OpenAI API key
 - [Claude CLI](https://docs.anthropic.com/en/docs/claude-code) (`npm install -g @anthropic-ai/claude-code`) — configured with an Anthropic API key
-- A git repository to analyze
+- A directory of source files to analyze. Normal story generation does not require the directory itself to be a git repository.
 
 For PR/MR review mode only:
 - [GitHub CLI](https://cli.github.com/) (`gh`) — for GitHub PRs
 - [GitLab CLI](https://gitlab.com/gitlab-org/cli) (`glab`) — for GitLab MRs
+- A git repository or `--repo` argument
 
 ## Usage
 
 ```bash
-# Navigate to any git repository
+# Navigate to any code directory
 cd my-project
 
 # Generate a story
